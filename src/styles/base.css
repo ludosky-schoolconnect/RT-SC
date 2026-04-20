@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Reset ──────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--off-white);
+  color: var(--ink-800);
+  line-height: 1.6;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Disable double-tap-to-zoom across the whole app. Pinch-zoom is
+     governed by the viewport meta tag (and may still be allowed by
+     some Android accessibility settings — that's intentional, we
+     don't want to break accessibility). */
+  touch-action: manipulation;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+button {
+  font-family: var(--font-body);
+  cursor: pointer;
+  border: none;
+  background: none;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+input,
+select,
+textarea {
+  font-family: var(--font-body);
+  font-size: 1rem;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ── Focus rings (gold, subtle) ─────────────────────────── */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.4);
+  border-radius: inherit;
+}
+
+/* ── Scrollbars — subtle ────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ink-200);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-400);
+}
+
+/* ── Typography helpers ─────────────────────────────────── */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* ── Shimmer animation for skeletons ────────────────────── */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--ink-100) 0%,
+    var(--ink-50) 50%,
+    var(--ink-100) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* ── Disable text-select on UI chrome ───────────────────── */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Prevent iOS double-tap zoom on buttons ─────────────── */
+button,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+/* ── À propos markdown body ──────────────────────────────── */
+.prose-rt-sc {
+  color: theme('colors.ink.800');
+  font-size: 1rem;
+  line-height: 1.7;
+}
+.prose-rt-sc h1,
+.prose-rt-sc h2,
+.prose-rt-sc h3 {
+  font-family: theme('fontFamily.display');
+  color: theme('colors.navy.DEFAULT');
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-top: 1.6em;
+  margin-bottom: 0.5em;
+}
+.prose-rt-sc h1 { font-size: 1.6rem; }
+.prose-rt-sc h2 { font-size: 1.3rem; }
+.prose-rt-sc h3 { font-size: 1.1rem; }
+.prose-rt-sc p { margin: 0.85em 0; }
+.prose-rt-sc a {
+  color: theme('colors.navy.DEFAULT');
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: theme('colors.gold.DEFAULT');
+  text-decoration-thickness: 1.5px;
+  transition: color 0.15s ease;
+}
+.prose-rt-sc a:hover {
+  color: theme('colors.gold.DEFAULT');
+}
+.prose-rt-sc ul,
+.prose-rt-sc ol {
+  margin: 0.85em 0;
+  padding-left: 1.5em;
+}
+.prose-rt-sc li { margin: 0.3em 0; }
+.prose-rt-sc ul li { list-style: disc; }
+.prose-rt-sc ol li { list-style: decimal; }
+.prose-rt-sc strong { color: theme('colors.navy.DEFAULT'); font-weight: 700; }
+.prose-rt-sc em { font-style: italic; }
+.prose-rt-sc blockquote {
+  border-left: 3px solid theme('colors.gold.DEFAULT');
+  padding-left: 1em;
+  margin: 1.2em 0;
+  color: theme('colors.ink.600');
+  font-style: italic;
+}
+.prose-rt-sc code {
+  background: theme('colors.ink.50');
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: ui-monospace, 'SF Mono', monospace;
+}
+.prose-rt-sc pre {
+  background: theme('colors.navy.DEFAULT');
+  color: white;
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.prose-rt-sc pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+.prose-rt-sc hr {
+  border: none;
+  border-top: 1px solid theme('colors.ink.100');
+  margin: 2em 0;
+}
+.prose-rt-sc img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 1em 0;
+}

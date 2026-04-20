@@ -1,0 +1,84 @@
+/* ============================================================
+   RT-SC · Design Tokens
+   Navy / Gold / White — Ivy League Premium
+   Playfair Display (display) + DM Sans (body)
+   ============================================================ */
+
+:root {
+  /* Palette */
+  --navy: #0B2545;
+  --navy-light: #1a3a6b;
+  --navy-dark: #071830;
+  --gold: #C9A84C;
+  --gold-light: #E8C97A;
+  --gold-pale: #FDF6E3;
+  --white: #FFFFFF;
+  --off-white: #F7F8FA;
+
+  --ink-50: #F0F2F5;
+  --ink-100: #E4E8EE;
+  --ink-200: #CBD2DC;
+  --ink-400: #8A96A8;
+  --ink-600: #4A5568;
+  --ink-800: #1E2A3A;
+
+  /* Semantic */
+  --success: #1A7F4B;
+  --success-bg: #EAF6F0;
+  --warning: #B45309;
+  --warning-bg: #FEF3C7;
+  --danger: #B91C1C;
+  --danger-bg: #FEE2E2;
+  --info: #0B2545;
+  --info-bg: #EFF4FB;
+
+  /* Séries (second cycle badges) */
+  --serie-a: #7C3AED;
+  --serie-a-bg: #EDE9FE;
+  --serie-b: #0284C7;
+  --serie-b-bg: #E0F2FE;
+  --serie-c: #059669;
+  --serie-c-bg: #D1FAE5;
+  --serie-d: #D97706;
+  --serie-d-bg: #FEF3C7;
+
+  /* Fonts */
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 3px rgba(11, 37, 69, 0.06);
+  --shadow-sm: 0 2px 8px rgba(11, 37, 69, 0.08);
+  --shadow-md: 0 4px 20px rgba(11, 37, 69, 0.12);
+  --shadow-lg: 0 8px 40px rgba(11, 37, 69, 0.18);
+  --shadow-xl: 0 16px 60px rgba(11, 37, 69, 0.24);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 400ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layout */
+  --dash-nav-height: 64px;
+  --dash-header-height: 68px;
+  --max-content-width: 760px;
+}

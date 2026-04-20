@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /ecole/subscription { allow read: if true; allow write: if request.auth != null && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin'; }
+    match /annuaire_parents/{document=**} { allow read: if true; allow create: if true; allow update, delete: if request.auth != null; }
+    match /classes/{classeId}/eleves/{eleveId}/absences/{absenceId} { allow read: if true; allow create: if true; allow update, delete: if request.auth != null; }
+    match /ecole/{document=**} { allow read: if true; allow write: if request.auth != null; }
+    match /settings_inscription/{document=**} { allow read: if true; allow write: if request.auth != null; }
+    match /classes/{classeId}/eleves/{eleveId} { allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['englishStreak', 'lastEnglishQuiz']); }
+    match /classes/{classeId}/eleves/{eleveId}/paiements/{paiementId} { allow read: if true; }
+    match /classes/{document=**} { allow read: if true; allow write: if request.auth != null; }
+    match /annonces/{document=**} { allow read: if true; allow write: if request.auth != null; }
+    match /annonces_globales/{document=**} { allow read: if true; allow write: if request.auth != null; }
+    match /school_codes/{document=**} { allow read: if true; allow write: if request.auth != null; }
+    match /system/{document=**} { allow read: if true; allow write: if request.auth != null; }
+    match /emploisDuTemps/{document=**} { allow read: if true; allow write: if request.auth != null; }
+    match /annales/{document=**} { allow read: if true; allow write: if request.auth != null; }
+
+    // ─── CMS pages (currently just /a-propos via cms/about) ───────────
+    // Public read so visitors see published content.
+    // Write restricted to the project owner — replace OWNER_UID below
+    // with the same UID used for VITE_OWNER_UID in .env.local.
+    // (Until you replace it, no one can write — safe default.)
+    match /cms/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == "OWNER_UID";
+    }
+    
+    match /{path=**}/eleves/{eleveId} { allow read: if true; }
+    match /pre_inscriptions/{document=**} { allow read, create: if true; allow update, delete: if request.auth != null; }
+
+    match /professeurs/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId && request.resource.data.statut == 'en_attente';
+      allow update, delete: if request.auth != null && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin';
+      allow read: if request.auth != null;
+    }
+    match /{document=**} {
+      allow read, write: if request.auth != null && exists(/databases/$(database)/documents/professeurs/$(request.auth.uid)) && (get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin' || (get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'prof' && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.statut == 'actif'));
+    }
+  }
+}

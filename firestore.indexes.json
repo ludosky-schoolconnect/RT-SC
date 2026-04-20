@@ -1,0 +1,51 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "eleves",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "passkeyParent", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "eleves",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "nom", "order": "ASCENDING" },
+        { "fieldPath": "genre", "order": "ASCENDING" },
+        { "fieldPath": "date_naissance", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "paiements",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "absences",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "matiere", "order": "ASCENDING" },
+        { "fieldPath": "periode", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "notes",
+      "fieldPath": "periode",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
+}

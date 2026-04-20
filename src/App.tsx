@@ -1,0 +1,142 @@
+/**
+ * RT-SC · App.
+ *
+ * - Defines every route in the application.
+ * - Wraps protected sections with auth and subscription guards.
+ * - Lazy-loads each role's dashboard so users only download the bundle they need.
+ */
+
+import { lazy, Suspense } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+
+import { AuthProvider } from '@/components/guards/AuthProvider'
+import { SubscriptionGuard } from '@/components/guards/SubscriptionGuard'
+import { ProtectedRoute } from '@/components/guards/ProtectedRoute'
+import { ToastContainer } from '@/components/ui/ToastContainer'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+
+// Eagerly loaded — small public-facing pages
+import LandingPage from '@/routes/landing/LandingPage'
+import WelcomePage from '@/routes/welcome/WelcomePage'
+import AdminLogin from '@/routes/auth/AdminLogin'
+import ProfAuth from '@/routes/auth/ProfAuth'
+import EleveChoice from '@/routes/auth/EleveChoice'
+import EleveSignup from '@/routes/auth/EleveSignup'
+import EleveLogin from '@/routes/auth/EleveLogin'
+import ParentLogin from '@/routes/auth/ParentLogin'
+import EnAttentePage from '@/routes/prof/EnAttentePage'
+import LockedPage from '@/routes/locked/LockedPage'
+import MaintenancePage from '@/routes/maintenance/MaintenancePage'
+import PaiementPage from '@/routes/paiement/PaiementPage'
+import InscriptionPage from '@/routes/inscription/InscriptionPage'
+import PreviewPage from '@/routes/preview/PreviewPage'
+import AboutPage from '@/routes/about/AboutPage'
+import CmsAboutEditor from '@/routes/cms/CmsAboutEditor'
+import { UidGate } from '@/components/guards/UidGate'
+
+// Lazy-loaded — heavy role dashboards in their own bundle
+const AdminDashboard = lazy(() => import('@/routes/admin/AdminDashboard'))
+const ProfDashboard = lazy(() => import('@/routes/prof/ProfDashboard'))
+const EleveDashboard = lazy(() => import('@/routes/eleve/EleveDashboard'))
+const ParentApp = lazy(() => import('@/routes/parent/ParentApp'))
+
+function RouteFallback() {
+  return (
+    <div className="min-h-dvh flex items-center justify-center bg-navy">
+      <div className="h-2 w-32 bg-white/15 rounded-full overflow-hidden">
+        <div className="h-full w-1/3 bg-gold rounded-full animate-pulse" />
+      </div>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <SubscriptionGuard>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            {/* Public entry points */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/welcome" element={<WelcomePage />} />
+
+            {/* Auth screens */}
+            <Route path="/auth/admin" element={<AdminLogin />} />
+            <Route path="/auth/prof" element={<ProfAuth />} />
+            <Route path="/auth/eleve" element={<EleveChoice />} />
+            <Route path="/auth/eleve/signup" element={<EleveSignup />} />
+            <Route path="/auth/eleve/login" element={<EleveLogin />} />
+            <Route path="/auth/parent" element={<ParentLogin />} />
+
+            {/* Public — inscription portal */}
+            <Route path="/inscription" element={<InscriptionPage />} />
+
+            {/* Public — À propos page (CMS-driven) */}
+            <Route path="/a-propos" element={<AboutPage />} />
+
+            {/* Hidden — À propos CMS editor, UID-gated to the developer */}
+            <Route
+              path="/__cms/about"
+              element={
+                <UidGate>
+                  <CmsAboutEditor />
+                </UidGate>
+              }
+            />
+
+            {/* Phase 1 — UI components preview (visual smoke test) */}
+            <Route path="/preview" element={<PreviewPage />} />
+
+            {/* SaaS lockout pages (no auth required so admin can pay even mid-lock) */}
+            <Route path="/locked" element={<LockedPage />} />
+            <Route path="/maintenance" element={<MaintenancePage />} />
+            <Route path="/paiement" element={<PaiementPage />} />
+
+            {/* Prof "en attente d'approbation" page (rendered before role checks) */}
+            <Route path="/prof/en-attente" element={<EnAttentePage />} />
+
+            {/* Admin */}
+            <Route
+              path="/admin/*"
+              element={
+                <ProtectedRoute role="admin">
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Prof */}
+            <Route
+              path="/prof/*"
+              element={
+                <ProtectedRoute role="prof">
+                  <ProfDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Élève */}
+            <Route
+              path="/eleve/*"
+              element={
+                <ProtectedRoute role="eleve">
+                  <EleveDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Parent — its own app entry, no general role gate (uses parent session) */}
+            <Route path="/parent/*" element={<ParentApp />} />
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+
+        {/* Globally-mounted UI services */}
+        <ToastContainer />
+        <ConfirmDialog />
+      </SubscriptionGuard>
+    </AuthProvider>
+  )
+}
