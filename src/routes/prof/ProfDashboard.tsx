@@ -20,7 +20,6 @@ import {
   Megaphone,
   CalendarClock,
   CalendarOff,
-  MoreHorizontal,
 } from 'lucide-react'
 import { DashboardLayout, type DashboardTab } from '@/components/layout/DashboardLayout'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
@@ -43,7 +42,6 @@ const TABS: DashboardTab[] = [
   { id: 'vie',      label: 'Vie',         icon: <CalendarOff className="h-full w-full" /> },
   { id: 'emploi',   label: 'Emploi',      icon: <CalendarClock className="h-full w-full" /> },
   { id: 'annonces', label: 'Annonces',    icon: <Megaphone className="h-full w-full" /> },
-  { id: 'plus',     label: 'Plus',        icon: <MoreHorizontal className="h-full w-full" /> },
 ]
 
 export default function ProfDashboard() {

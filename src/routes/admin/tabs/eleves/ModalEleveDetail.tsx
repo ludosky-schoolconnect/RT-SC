@@ -145,11 +145,22 @@ export function ModalEleveDetail({
     if (!ok) return
 
     try {
-      await deleteMut.mutateAsync({ classeId, eleveId: eleve.id })
-      toast.success(`${eleve.nom} supprimé.`)
+      const { warnings } = await deleteMut.mutateAsync({ classeId, eleveId: eleve.id })
+      if (warnings.length > 0) {
+        // Élève doc IS deleted — we just couldn't clear every stray
+        // subcollection record. Success message + visible warnings.
+        toast.success(
+          `${eleve.nom} supprimé. ${warnings.length} avertissement${warnings.length > 1 ? 's' : ''} — voir la console.`
+        )
+        console.warn('[delete éleve] warnings:', warnings)
+      } else {
+        toast.success(`${eleve.nom} supprimé.`)
+      }
       onClose()
-    } catch {
-      toast.error('Erreur lors de la suppression.')
+    } catch (err) {
+      console.error('[delete élève] fatal:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(`Erreur lors de la suppression : ${msg}`)
     }
   }
 

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>SchoolConnect Command Center</title>
+    <style>
+        body { background: #0f172a; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .card { background: #1e293b; padding: 32px; border-radius: 16px; width: 100%; max-width: 480px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border-top: 4px solid var(--accent, #3b82f6); margin: 20px 0; }
+        h1 { margin-top: 0; font-size: 1.4rem; text-align: center; margin-bottom: 20px; }
+        h3 { margin-top: 0; font-size: 0.95rem; margin-bottom: 12px; }
+        label { font-size: 0.8rem; color: #94a3b8; display: block; margin-bottom: 5px; font-weight: 500; }
+        input, select { width: 100%; padding: 11px 12px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; font-size: 0.9rem; }
+        input:focus, select:focus { outline: none; border-color: var(--accent, #3b82f6); }
+        select { font-weight: bold; font-size: 1rem; border: 2px solid var(--accent, #3b82f6); cursor: pointer; }
+        button { width: 100%; padding: 13px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; transition: 0.15s; margin-bottom: 8px; font-size: 0.9rem; }
+        button:hover { filter: brightness(1.1); }
+        button:active { transform: scale(0.98); }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-neutral { background: #334155; color: white; border: 1px solid #475569; }
+        .btn-warning { background: #eab308; color: black; }
+        .btn-danger { background: transparent; border: 2px solid #ef4444; color: #ef4444; }
+        .alert { background: #7f1d1d; border: 1px solid #ef4444; padding: 13px; border-radius: 8px; margin-bottom: 18px; text-align: center; display: none; animation: pulse 2s infinite; font-weight: bold; font-size: 0.85rem; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        .stat { background: #0f172a; padding: 14px; border-radius: 8px; text-align: center; margin-bottom: 18px; border: 1px solid #334155; }
+        .section { background: rgba(59, 130, 246, 0.07); padding: 14px; border-radius: 8px; border: 1px dashed #3b82f6; margin-bottom: 18px; }
+        .section-fedapay { background: rgba(16, 185, 129, 0.07); border-color: #10b981; }
+        .section-fedapay h3 { color: #4ade80; }
+        .section-subscription { background: rgba(249, 115, 22, 0.07); border-color: #f97316; }
+        .section-subscription h3 { color: #fb923c; }
+        .section-support { background: rgba(34, 197, 94, 0.07); border-color: #22c55e; }
+        .section-support h3 { color: #4ade80; }
+        .actions { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+        .help { font-size: 0.7rem; color: #64748b; margin-top: -8px; margin-bottom: 12px; line-height: 1.4; }
+    </style>
+</head>
+<body>
+    <div id="app-container" class="card">
+        <div style="text-align: center; color: #94a3b8;">Initialisation des serveurs...</div>
+    </div>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+        import { getFirestore, doc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+        // ═══════════════════════════════════════════════════════════
+        // CONFIGURATION DES ÉCOLES
+        // Ajoutez/modifiez les écoles ici. Chaque entrée doit avoir :
+        //   - name: nom affiché dans le sélecteur
+        //   - config: objet Firebase web config (copié depuis la console)
+        // ═══════════════════════════════════════════════════════════
+        const schoolsData = {
+            "ecole1": {
+                name: "🏫 École Alpha",
+                config: {
+                    apiKey: "AIzaSyBIsAMHy0QiQwTDZoKAgNkKaCC54oiddAg",
+                    authDomain: "schoolconnect-1adfa.firebaseapp.com",
+                    projectId: "schoolconnect-1adfa",
+                    storageBucket: "schoolconnect-1adfa.firebasestorage.app",
+                    messagingSenderId: "31919643114",
+                    appId: "1:31919643114:web:825c0ff537d1aee93aba93"
+                }
+            },
+            "ecole2": {
+                name: "🏫 École Beta",
+                config: {
+                    apiKey: "AIzaSyCs_t3DkmK3wwGP0lkBhd-EMAC1GPnrsXo",
+                    authDomain: "schoolconnect-beta.firebaseapp.com",
+                    projectId: "schoolconnect-beta",
+                    storageBucket: "schoolconnect-beta.firebasestorage.app",
+                    messagingSenderId: "780386969401",
+                    appId: "1:780386969401:web:4ff2f2a361b3d2c1c9aae8"
+                }
+            },
+            "ecole3": {
+                name: "🏫 École Gamma",
+                config: {
+                    apiKey: "AIzaSyAiOQBexDiNCdxDOz41Ohdl-br6VDGKBGE",
+                    authDomain: "schoolconnect-gamma.firebaseapp.com",
+                    projectId: "schoolconnect-gamma",
+                    storageBucket: "schoolconnect-gamma.firebasestorage.app",
+                    messagingSenderId: "806007462656",
+                    appId: "1:806007462656:web:3ed3f76e4620d3274a71e5"
+                }
+            }
+        };
+
+        const apps = {};
+        for (const [id, data] of Object.entries(schoolsData)) {
+            const appInstance = initializeApp(data.config, id);
+            apps[id] = { name: data.name, auth: getAuth(appInstance), db: getFirestore(appInstance) };
+        }
+
+        const container = document.getElementById('app-container');
+        let currentUnsubscribe = null;
+
+        showLogin();
+
+        function showLogin() {
+            container.style.setProperty('--accent', '#3b82f6');
+            container.innerHTML = `
+                <h1>🔐 Master Access</h1>
+                <input type="email" id="l-email" placeholder="Email développeur" required>
+                <input type="password" id="l-pwd" placeholder="Mot de passe" required>
+                <button class="btn-primary" id="btn-login">Connexion Globale</button>
+                <div id="login-status" style="text-align:center; margin-top:10px; color:#94a3b8; font-size:0.85rem;"></div>
+            `;
+
+            document.getElementById('btn-login').onclick = async () => {
+                const email = document.getElementById('l-email').value;
+                const pwd = document.getElementById('l-pwd').value;
+                const status = document.getElementById('login-status');
+                try {
+                    status.style.color = "#3b82f6"; status.textContent = "Authentification...";
+                    for (const id in apps) { await signInWithEmailAndPassword(apps[id].auth, email, pwd); }
+                    loadDashboard();
+                } catch(e) {
+                    status.style.color = "#ef4444";
+                    status.textContent = "Erreur : identifiants incorrects.";
+                }
+            };
+
+            // Enter key triggers login
+            document.getElementById('l-pwd').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') document.getElementById('btn-login').click();
+            });
+        }
+
+        function loadDashboard() {
+            container.style.setProperty('--accent', '#10b981');
+
+            let selectOptions = '';
+            for (const id in apps) {
+                selectOptions += `<option value="${id}">${apps[id].name}</option>`;
+            }
+
+            container.innerHTML = `
+                <h1>⚙️ Command Center</h1>
+                <select id="school-selector">${selectOptions}</select>
+                <div id="alert-unlock" class="alert">🔔 Cette école dit avoir payé (hors ligne) !</div>
+
+                <div class="stat">
+                    <div style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px;">Deadline actuelle</div>
+                    <div id="status-deadline" style="font-size: 1.3rem; font-weight: bold; color: #10b981;">Chargement...</div>
+                    <div id="status-lock" style="font-size: 0.8rem; color: #ef4444; margin-top: 6px; font-weight: bold; background: #7f1d1d; border-radius: 4px; padding: 3px 6px; display: none;">VERROUILLAGE MANUEL ACTIVÉ</div>
+                </div>
+
+                <!-- FedaPay -->
+                <div class="section section-fedapay">
+                    <h3>💰 Configuration FedaPay</h3>
+                    <label>Clé publique FedaPay</label>
+                    <input type="text" id="input-fedapay-key" placeholder="pk_live_... ou pk_sandbox_...">
+                </div>
+
+                <!-- Subscription -->
+                <div class="section section-subscription">
+                    <h3>📅 Configuration de l'abonnement</h3>
+                    <label>Prix (FCFA)</label>
+                    <input type="number" id="input-sub-price" placeholder="Ex: 15000">
+                    <label>Durée par paiement (mois)</label>
+                    <input type="number" id="input-sub-duration" placeholder="Ex: 1, 3, 6, 12" min="1" max="24">
+                    <p class="help">La durée détermine combien de mois sont ajoutés à la deadline après chaque paiement FedaPay.</p>
+                </div>
+
+                <!-- Support -->
+                <div class="section section-support">
+                    <h3>💬 Support WhatsApp</h3>
+                    <label>Numéro WhatsApp (avec indicatif, sans +)</label>
+                    <input type="text" id="input-support-wa" placeholder="Ex: 22990123456">
+                    <p class="help">Affiché sur la page "Accès restreint" des admins. Le lien ouvre WhatsApp avec un message pré-rempli.</p>
+                </div>
+
+                <button id="btn-save-config" class="btn-primary" style="margin-bottom: 18px;">💾 Enregistrer la configuration</button>
+
+                <h3 style="margin-top: 24px;">Actions d'abonnement</h3>
+                <div class="actions">
+                    <button id="btn-add-month" class="btn-success">✅ Paiement reçu : ajouter la durée configurée</button>
+                    <button id="btn-clear-alert" class="btn-neutral">☑️ Effacer l'alerte (garder la date)</button>
+                    <button id="btn-reset-cycle" class="btn-warning">🔄 Redémarrer le cycle à aujourd'hui</button>
+                </div>
+
+                <button id="btn-toggle-lock" class="btn-danger">🔒 Verrouiller manuellement</button>
+            `;
+
+            const selector = document.getElementById('school-selector');
+            selector.addEventListener('change', (e) => listenToSchool(e.target.value));
+            listenToSchool(selector.value);
+        }
+
+        function listenToSchool(schoolId) {
+            if (currentUnsubscribe) currentUnsubscribe();
+
+            const db = apps[schoolId].db;
+            const schoolName = apps[schoolId].name;
+
+            document.getElementById('status-deadline').textContent = "Chargement...";
+            document.getElementById('alert-unlock').style.display = 'none';
+            document.getElementById('status-lock').style.display = 'none';
+            document.getElementById('input-fedapay-key').value = '';
+            document.getElementById('input-sub-price').value = '';
+            document.getElementById('input-sub-duration').value = '';
+            document.getElementById('input-support-wa').value = '';
+
+            currentUnsubscribe = onSnapshot(doc(db, 'ecole', 'subscription'), (docSnap) => {
+                const data = docSnap.exists() ? docSnap.data() : {};
+                const deadline = data.deadline ? data.deadline.toDate() : new Date();
+
+                if (!docSnap.exists()) {
+                    document.getElementById('status-deadline').textContent = "Base non initialisée";
+                    document.getElementById('status-lock').style.display = 'none';
+                    document.getElementById('alert-unlock').style.display = 'none';
+                } else {
+                    document.getElementById('status-deadline').textContent = deadline.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+                    document.getElementById('status-lock').style.display = data.isManualLock ? 'block' : 'none';
+                    document.getElementById('alert-unlock').style.display = data.hasRequestedUnlock ? 'block' : 'none';
+
+                    // Prefill inputs if not currently being edited.
+                    // This prevents the value being wiped out mid-typing
+                    // every time the snapshot fires.
+                    if (document.activeElement !== document.getElementById('input-fedapay-key')) {
+                        document.getElementById('input-fedapay-key').value = data.fedaPayPublicKey || '';
+                    }
+                    if (document.activeElement !== document.getElementById('input-sub-price')) {
+                        document.getElementById('input-sub-price').value = data.subscriptionPrice || '';
+                    }
+                    if (document.activeElement !== document.getElementById('input-sub-duration')) {
+                        document.getElementById('input-sub-duration').value = data.subscriptionDurationMonths || '';
+                    }
+                    if (document.activeElement !== document.getElementById('input-support-wa')) {
+                        document.getElementById('input-support-wa').value = data.supportWhatsAppNumber || '';
+                    }
+                }
+
+                // ─── Save configuration (FedaPay + price + duration + WhatsApp) ───
+                document.getElementById('btn-save-config').onclick = async () => {
+                    const newKey = document.getElementById('input-fedapay-key').value.trim();
+                    const newPrice = parseInt(document.getElementById('input-sub-price').value, 10);
+                    const newDuration = parseInt(document.getElementById('input-sub-duration').value, 10);
+                    const rawWa = document.getElementById('input-support-wa').value.trim();
+                    // Strip non-digits so "+229 90 12 34 56" or "229 90123456" all work
+                    const newWa = rawWa ? rawWa.replace(/\D/g, '') : '';
+
+                    // Validation
+                    if (!newKey) return alert("Veuillez saisir une clé FedaPay.");
+                    if (isNaN(newPrice) || newPrice <= 0) return alert("Veuillez saisir un prix valide.");
+                    if (isNaN(newDuration) || newDuration < 1) return alert("Veuillez saisir une durée en mois (≥ 1).");
+
+                    const btn = document.getElementById('btn-save-config');
+                    const originalLabel = "💾 Enregistrer la configuration";
+                    btn.textContent = "⏳ Sauvegarde...";
+                    try {
+                        const payload = {
+                            fedaPayPublicKey: newKey,
+                            subscriptionPrice: newPrice,
+                            subscriptionDurationMonths: newDuration,
+                        };
+                        // Only write supportWhatsAppNumber if non-empty — avoids
+                        // overwriting with "" which would hide the button for
+                        // every school.
+                        if (newWa) payload.supportWhatsAppNumber = newWa;
+
+                        await setDoc(doc(db, 'ecole', 'subscription'), payload, { merge: true });
+                        btn.textContent = "✅ Enregistrée !";
+                        setTimeout(() => { btn.textContent = originalLabel; }, 2000);
+                    } catch(e) {
+                        alert("Erreur : " + e.message);
+                        btn.textContent = originalLabel;
+                    }
+                };
+
+                // ─── Add configured duration ───
+                document.getElementById('btn-add-month').onclick = async () => {
+                    const duration = parseInt(document.getElementById('input-sub-duration').value, 10)
+                                    || data.subscriptionDurationMonths
+                                    || 1;
+                    if (confirm(`Confirmer +${duration} mois pour ${schoolName} ?`)) {
+                        // FAIRNESS LOGIC (same as RT-SC): if current deadline is
+                        // in the future, extend from there (school keeps days
+                        // already paid). If it's passed, start fresh from today.
+                        const now = new Date();
+                        let base = (deadline > now) ? new Date(deadline) : new Date(now);
+                        base.setMonth(base.getMonth() + duration);
+                        await setDoc(doc(db, 'ecole', 'subscription'), {
+                            deadline: base,
+                            isManualLock: false,
+                            hasRequestedUnlock: false,
+                        }, { merge: true });
+                    }
+                };
+
+                // ─── Clear unlock-request alert ───
+                document.getElementById('btn-clear-alert').onclick = async () => {
+                    if (confirm(`Effacer l'alerte de paiement externe pour ${schoolName} ?`)) {
+                        await setDoc(doc(db, 'ecole', 'subscription'), {
+                            hasRequestedUnlock: false,
+                        }, { merge: true });
+                    }
+                };
+
+                // ─── Reset cycle to today ───
+                document.getElementById('btn-reset-cycle').onclick = async () => {
+                    const duration = parseInt(document.getElementById('input-sub-duration').value, 10)
+                                    || data.subscriptionDurationMonths
+                                    || 1;
+                    if (confirm(`Redémarrer le cycle à aujourd'hui +${duration} mois pour ${schoolName} ?`)) {
+                        const newDeadline = new Date();
+                        newDeadline.setMonth(newDeadline.getMonth() + duration);
+                        await setDoc(doc(db, 'ecole', 'subscription'), {
+                            deadline: newDeadline,
+                            isManualLock: false,
+                            hasRequestedUnlock: false,
+                        }, { merge: true });
+                    }
+                };
+
+                // ─── Toggle manual lock ───
+                const btnLock = document.getElementById('btn-toggle-lock');
+                btnLock.textContent = data.isManualLock ? '🔓 Déverrouiller manuellement' : '🔒 Verrouiller manuellement';
+                btnLock.onclick = async () => {
+                    await setDoc(doc(db, 'ecole', 'subscription'), {
+                        isManualLock: !data.isManualLock,
+                    }, { merge: true });
+                };
+            });
+        }
+    </script>
+</body>
+</html>

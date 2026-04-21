@@ -27,6 +27,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { collection, onSnapshot, query, Timestamp } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { absencesCol, presencesCol } from '@/lib/firestore-keys'
+import { todayISO } from '@/hooks/usePresenceMutations'
 import type {
   Absence,
   AbsentMark,
@@ -177,9 +178,14 @@ export function useClasseMarkedRollup(classeId: string | null | undefined) {
   const { presencesByDate, isLoading } = useClasseAbsencesRaw(classeId)
 
   const rollup = useMemo<AbsenceCountRow[]>(() => {
+    const today = todayISO()
     const byEleve = new Map<string, AbsenceCountRow>()
 
     for (const [dateISO, presenceDoc] of Object.entries(presencesByDate)) {
+      // Pre-today docs belong in the archive — don't include them in the
+      // active per-class rollup. The archive (separate surface, future)
+      // shows the historical record.
+      if (dateISO < today) continue
       const date = new Date(dateISO + 'T12:00:00')
       for (const slot of Object.values(presenceDoc)) {
         if (!slot?.absents) continue
@@ -193,7 +199,6 @@ export function useClasseMarkedRollup(classeId: string | null | undefined) {
             lastDate: null,
           }
           cur.markedCount += 1
-          // Keep the most recent name we've seen (denormalized at write time)
           if (mark?.nom) cur.eleveNom = mark.nom
           if (!cur.lastDate || date > cur.lastDate) cur.lastDate = date
           byEleve.set(eleveId, cur)
@@ -225,6 +230,7 @@ export function useEleveAbsencesUnified(
 
   return useMemo(() => {
     if (!eleveId) return []
+    const today = todayISO()
     const out: UnifiedAbsence[] = []
 
     // Declared
@@ -244,8 +250,9 @@ export function useEleveAbsencesUnified(
       })
     })
 
-    // Marked
+    // Marked — today only; pre-today is in the archive
     for (const [dateISO, presenceDoc] of Object.entries(presencesByDate)) {
+      if (dateISO < today) continue
       for (const [matiereSlug, slot] of Object.entries(presenceDoc)) {
         const absentMark = slot?.absents?.[eleveId]
         if (!absentMark) continue

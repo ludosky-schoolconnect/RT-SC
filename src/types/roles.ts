@@ -6,7 +6,7 @@
 import type { User } from 'firebase/auth'
 import type { Professeur } from './models'
 
-export type Role = 'admin' | 'prof' | 'eleve' | 'parent' | null
+export type Role = 'admin' | 'prof' | 'caissier' | 'eleve' | 'parent' | null
 
 /** Element session (stored in localStorage as `sc_eleve_session`) */
 export interface EleveSession {

@@ -20,6 +20,8 @@ import LandingPage from '@/routes/landing/LandingPage'
 import WelcomePage from '@/routes/welcome/WelcomePage'
 import AdminLogin from '@/routes/auth/AdminLogin'
 import ProfAuth from '@/routes/auth/ProfAuth'
+import CaisseAuth from '@/routes/auth/CaisseAuth'
+import PersonnelChoice from '@/routes/auth/PersonnelChoice'
 import EleveChoice from '@/routes/auth/EleveChoice'
 import EleveSignup from '@/routes/auth/EleveSignup'
 import EleveLogin from '@/routes/auth/EleveLogin'
@@ -27,7 +29,6 @@ import ParentLogin from '@/routes/auth/ParentLogin'
 import EnAttentePage from '@/routes/prof/EnAttentePage'
 import LockedPage from '@/routes/locked/LockedPage'
 import MaintenancePage from '@/routes/maintenance/MaintenancePage'
-import PaiementPage from '@/routes/paiement/PaiementPage'
 import InscriptionPage from '@/routes/inscription/InscriptionPage'
 import PreviewPage from '@/routes/preview/PreviewPage'
 import AboutPage from '@/routes/about/AboutPage'
@@ -39,6 +40,7 @@ const AdminDashboard = lazy(() => import('@/routes/admin/AdminDashboard'))
 const ProfDashboard = lazy(() => import('@/routes/prof/ProfDashboard'))
 const EleveDashboard = lazy(() => import('@/routes/eleve/EleveDashboard'))
 const ParentApp = lazy(() => import('@/routes/parent/ParentApp'))
+const CaissierDashboard = lazy(() => import('@/routes/caissier/CaissierDashboard'))
 
 function RouteFallback() {
   return (
@@ -62,7 +64,21 @@ export default function App() {
 
             {/* Auth screens */}
             <Route path="/auth/admin" element={<AdminLogin />} />
-            <Route path="/auth/prof" element={<ProfAuth />} />
+
+            {/* Personnel de l'école — umbrella. Chooser presents
+                Professeur vs Caissier. Both paths lead to signup +
+                login + forgot-password tabs that stamp the correct
+                role at account creation. */}
+            <Route path="/auth/personnel" element={<PersonnelChoice />} />
+            <Route path="/auth/personnel/prof" element={<ProfAuth />} />
+            <Route path="/auth/personnel/caisse" element={<CaisseAuth />} />
+
+            {/* Backward compat — anyone hitting /auth/prof lands on
+                the chooser (they almost certainly meant Professeur,
+                but showing the chooser educates them on the caissier
+                entry point without breaking anything). */}
+            <Route path="/auth/prof" element={<PersonnelChoice />} />
+
             <Route path="/auth/eleve" element={<EleveChoice />} />
             <Route path="/auth/eleve/signup" element={<EleveSignup />} />
             <Route path="/auth/eleve/login" element={<EleveLogin />} />
@@ -90,7 +106,9 @@ export default function App() {
             {/* SaaS lockout pages (no auth required so admin can pay even mid-lock) */}
             <Route path="/locked" element={<LockedPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
-            <Route path="/paiement" element={<PaiementPage />} />
+            {/* Legacy /paiement route — redirects to the unified /locked
+                page (Phase 6f consolidated both into one FedaPay inline flow). */}
+            <Route path="/paiement" element={<Navigate to="/locked" replace />} />
 
             {/* Prof "en attente d'approbation" page (rendered before role checks) */}
             <Route path="/prof/en-attente" element={<EnAttentePage />} />
@@ -121,6 +139,18 @@ export default function App() {
               element={
                 <ProtectedRoute role="eleve">
                   <EleveDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Caissier — dedicated surface for finance + inscriptions.
+                The role is exclusive: someone with role='caissier' CAN'T
+                also access admin/prof dashboards. */}
+            <Route
+              path="/caissier/*"
+              element={
+                <ProtectedRoute role="caissier">
+                  <CaissierDashboard />
                 </ProtectedRoute>
               }
             />

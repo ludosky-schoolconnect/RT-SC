@@ -24,26 +24,42 @@ import { Button } from '@/components/ui/Button'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useClasses } from '@/hooks/useClasses'
+import { useProfs } from '@/hooks/useProfs'
 import { useAssignClasses } from '@/hooks/useProfsMutations'
 import { useToast } from '@/stores/toast'
 import { nomClasse } from '@/lib/benin'
 import type { Professeur, Classe } from '@/types/models'
 
 interface ModalAssignClassesProps {
+  /**
+   * The prof this modal was opened for. Like ModalProfDetail, we
+   * look up the CURRENT cache copy by ID so mutations land instantly.
+   */
   prof: Professeur | null
   onClose: () => void
 }
 
-export function ModalAssignClasses({ prof, onClose }: ModalAssignClassesProps) {
+export function ModalAssignClasses({ prof: propProf, onClose }: ModalAssignClassesProps) {
   const toast = useToast()
   const { data: classes = [] } = useClasses()
+  const { data: allProfs = [] } = useProfs()
   const assignMut = useAssignClasses()
+
+  // Prefer live cache so assignments reflect immediately after save.
+  const prof = propProf
+    ? allProfs.find((p) => p.id === propProf.id) ?? propProf
+    : null
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
+  // Initialize checkboxes when modal opens for a new prof. Only keyed
+  // on prof.id — we don't resync when other admins update this prof
+  // mid-edit, because that would clobber the current admin's in-
+  // progress selections.
   useEffect(() => {
     if (prof) setSelected(new Set(prof.classesIds ?? []))
-  }, [prof])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prof?.id])
 
   // Group classes by cycle for nicer scanning
   const grouped = useMemo(() => {

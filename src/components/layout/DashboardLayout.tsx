@@ -1,5 +1,5 @@
 /**
- * RT-SC · DashboardLayout (adaptive).
+ * RT-SC · DashboardLayout (adaptive + responsive overflow).
  *
  * Shared shell for admin / prof / élève dashboards.
  *
@@ -10,24 +10,42 @@
  * Both presentations share the same activeTab state (URL-driven via
  * ?tab=...). Refreshing keeps you on the same tab; back/forward work.
  *
+ * RESPONSIVE OVERFLOW (Phase 6e):
+ *   Callers pass a SINGLE flat `tabs` array. The layout measures the
+ *   available nav width and decides how many tabs fit directly. The
+ *   rest collapse into a "Plus" button whose dropdown lists them.
+ *
+ *   On a wide desktop, all 8 admin tabs may fit directly — no Plus.
+ *   On a narrow tablet, maybe 5 fit + 3 overflow → Plus appears with
+ *   those 3. On mobile, the first 4 tabs always go to the bottom nav
+ *   and the rest go to Plus (phones can't afford the desktop layout's
+ *   measurement games, and hard-coding 4 is a predictable UX).
+ *
+ *   When the active tab is in the overflow bucket, the Plus button
+ *   itself renders as "active" so the user always sees feedback for
+ *   where they are.
+ *
  * Features:
  *   - Sticky navy header with brand mark, school name, admin avatar dropdown
  *   - Logout via confirm dialog
  *   - Animated tab transitions in the content area
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { signOut } from 'firebase/auth'
-import { LogOut, ChevronDown, Building2 } from 'lucide-react'
+import { LogOut, ChevronDown, Building2, MoreHorizontal, X } from 'lucide-react'
 import { auth } from '@/firebase'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/stores/toast'
 import { useConfirm } from '@/stores/confirm'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { SchoolConnectLogo } from '@/components/ui/SchoolConnectLogo'
+import { useDismissibleLayer } from '@/components/ui/useDismissibleLayer'
+import { SubscriptionWarningBanner } from './SubscriptionWarningBanner'
 import { cn } from '@/lib/cn'
+import { useOverflowTabs } from './useOverflowTabs'
 
 export interface DashboardTab {
   id: string
@@ -38,7 +56,11 @@ export interface DashboardTab {
 interface DashboardLayoutProps {
   /** Role label shown above user name (e.g. "Administration") */
   roleLabel: string
-  /** Tabs to render */
+  /**
+   * Flat list of ALL tabs. The layout chooses how many are visible
+   * directly vs hidden in the Plus overflow based on available width
+   * (desktop) or a fixed threshold (mobile).
+   */
   tabs: DashboardTab[]
   /** Default tab id when none in URL */
   defaultTab: string
@@ -46,6 +68,12 @@ interface DashboardLayoutProps {
   renderTab: (activeTab: string) => ReactNode
   /** Optional school name shown in header */
   schoolName?: string
+  /**
+   * Max tabs to show directly on mobile before overflow. Defaults to
+   * 4 — enough for 5-slot thumb-reach nav (4 + Plus). Callers can
+   * raise to 5 if icons fit comfortably without labels truncating.
+   */
+  mobileDirectTabs?: number
 }
 
 export function DashboardLayout({
@@ -54,6 +82,7 @@ export function DashboardLayout({
   defaultTab,
   renderTab,
   schoolName,
+  mobileDirectTabs = 4,
 }: DashboardLayoutProps) {
   const navigate = useNavigate()
   const toast = useToast()
@@ -82,7 +111,7 @@ export function DashboardLayout({
   // their own name in the session (auth is by child passkey) so we show
   // the active child's name instead.
   const displayName = (() => {
-    if (role === 'admin' || role === 'prof') return profil?.nom ?? '—'
+    if (role === 'admin' || role === 'prof' || role === 'caissier') return profil?.nom ?? '—'
     if (role === 'eleve') return eleveSession?.nom ?? '—'
     if (role === 'parent' && parentSession) {
       const active = parentSession.children[parentSession.activeIndex]
@@ -132,6 +161,11 @@ export function DashboardLayout({
           'pb-[calc(72px+env(safe-area-inset-bottom))] md:pb-8'
         )}
       >
+        {/* Admin-only warning banner — renders null for non-admins and
+            outside the warning/grace windows. Sits ABOVE tab content so
+            it's always visible regardless of which tab is active. */}
+        <SubscriptionWarningBanner />
+
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -148,7 +182,12 @@ export function DashboardLayout({
       </main>
 
       {/* Bottom nav — mobile only */}
-      <MobileBottomNav tabs={tabs} activeTab={activeTab} onChange={setTab} />
+      <MobileBottomNav
+        tabs={tabs}
+        activeTab={activeTab}
+        onChange={setTab}
+        directCount={mobileDirectTabs}
+      />
     </div>
   )
 }
@@ -172,6 +211,9 @@ function DashHeader({
 }: DashHeaderProps) {
   const [open, setOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Android back button + Escape close the dropdown (not navigate away).
+  useDismissibleLayer({ open, onClose: () => setOpen(false) })
 
   useEffect(() => {
     if (!open) return
@@ -281,7 +323,20 @@ function DashHeader({
   )
 }
 
-// ─── Top tabs (desktop) ─────────────────────────────────────
+// ─── Top tabs (desktop) — responsive overflow ───────────────
+//
+// Renders tabs directly while they fit. When they don't, collapses
+// the overflow into a "Plus" button whose menu lists the hidden
+// tabs. Uses two DOM layers:
+//
+//   1. Hidden measurement layer: ALL tabs rendered offscreen at
+//      their natural width. Lets us know each tab's width without
+//      affecting layout.
+//   2. Visible layer: just the tabs that fit + the Plus button (if
+//      any tabs overflow).
+//
+// ResizeObserver on the container re-runs the measurement on window
+// resize, sidebar toggle, or anything else that changes width.
 
 interface NavProps {
   tabs: DashboardTab[]
@@ -290,66 +345,278 @@ interface NavProps {
 }
 
 function DesktopTabs({ tabs, activeTab, onChange }: NavProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const measurementRef = useRef<HTMLDivElement>(null)
+  const plusButtonRef = useRef<HTMLButtonElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuWrapRef = useRef<HTMLDivElement>(null)
+
+  const { visibleCount, hasOverflow } = useOverflowTabs(
+    tabs,
+    containerRef,
+    measurementRef,
+    plusButtonRef
+  )
+
+  // Back-button / Escape handling for the desktop overflow dropdown.
+  // Ensures Android back tap + browser back closes the dropdown
+  // instead of navigating out of the page.
+  useDismissibleLayer({
+    open: menuOpen,
+    onClose: () => setMenuOpen(false),
+  })
+
+  const visible = useMemo(() => tabs.slice(0, visibleCount), [tabs, visibleCount])
+  const overflow = useMemo(() => tabs.slice(visibleCount), [tabs, visibleCount])
+
+  const activeInOverflow = overflow.some((t) => t.id === activeTab)
+  const activeOverflowTab = overflow.find((t) => t.id === activeTab)
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDoc(e: MouseEvent) {
+      if (menuWrapRef.current && !menuWrapRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [menuOpen])
+
+  // Close menu after picking an overflow tab
+  function pickOverflow(id: string) {
+    setMenuOpen(false)
+    onChange(id)
+  }
+
   return (
     <div className="hidden md:block bg-white border-b border-ink-100 sticky top-[68px] z-30 shadow-xs">
-      <div className="max-w-5xl mx-auto px-4 flex">
-        {tabs.map((t) => {
-          const active = t.id === activeTab
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => onChange(t.id)}
-              className={cn(
-                'relative inline-flex items-center gap-2 px-4 py-3.5 text-[0.875rem] font-semibold tracking-tight',
-                'transition-colors duration-150 ease-out-soft min-h-touch',
-                active ? 'text-navy' : 'text-ink-400 hover:text-ink-600'
-              )}
-            >
-              <span className={cn('h-4 w-4', active && 'text-navy')} aria-hidden>
-                {t.icon}
-              </span>
-              {t.label}
-              {active && (
-                <motion.span
-                  layoutId="rt-sc-desktop-tab-indicator"
-                  className="absolute inset-x-2 bottom-0 h-[2.5px] bg-gold rounded-t-full"
-                  transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+      <div className="max-w-5xl mx-auto px-4">
+        {/* Hidden measurement layer — renders ALL tabs so we know
+            each one's natural width. visibility:hidden preserves
+            layout; position:absolute + pointer-events:none keeps it
+            out of the visual + interactive flow. */}
+        <div
+          ref={measurementRef}
+          aria-hidden
+          className="flex invisible pointer-events-none absolute"
+          style={{ top: -9999, left: 0, height: 0 }}
+        >
+          {tabs.map((t) => (
+            <DesktopTabButton
+              key={`m-${t.id}`}
+              tab={t}
+              active={false}
+              onClick={() => {}}
+              measuring
+            />
+          ))}
+        </div>
+
+        {/* Visible layer — direct tabs + optional Plus */}
+        <div ref={containerRef} className="flex items-stretch">
+          {visible.map((t) => {
+            const active = t.id === activeTab
+            return (
+              <DesktopTabButton
+                key={t.id}
+                tab={t}
+                active={active}
+                onClick={() => onChange(t.id)}
+              />
+            )
+          })}
+
+          {hasOverflow && (
+            <div ref={menuWrapRef} className="relative">
+              <button
+                ref={plusButtonRef}
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                className={cn(
+                  'relative inline-flex items-center gap-2 px-4 py-3.5 text-[0.875rem] font-semibold tracking-tight',
+                  'transition-colors duration-150 ease-out-soft min-h-touch',
+                  activeInOverflow ? 'text-navy' : 'text-ink-400 hover:text-ink-600'
+                )}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+              >
+                <MoreHorizontal
+                  className={cn('h-4 w-4', activeInOverflow && 'text-navy')}
+                  aria-hidden
                 />
-              )}
-            </button>
-          )
-        })}
+                {/* When an overflow item is active, show ITS label on
+                    the Plus button so the user sees where they are.
+                    Otherwise show "Plus" generically. */}
+                {activeInOverflow && activeOverflowTab
+                  ? activeOverflowTab.label
+                  : 'Plus'}
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 transition-transform',
+                    menuOpen && 'rotate-180'
+                  )}
+                  aria-hidden
+                />
+                {activeInOverflow && (
+                  <motion.span
+                    layoutId="rt-sc-desktop-tab-indicator"
+                    className="absolute inset-x-2 bottom-0 h-[2.5px] bg-gold rounded-t-full"
+                    transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                  />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {menuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-1 w-64 rounded-md bg-white shadow-xl border border-ink-100 overflow-hidden z-40"
+                    role="menu"
+                  >
+                    {overflow.map((t) => {
+                      const active = t.id === activeTab
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => pickOverflow(t.id)}
+                          className={cn(
+                            'w-full flex items-center gap-2.5 px-4 py-3 text-[0.875rem] hover:bg-ink-50 transition-colors min-h-touch',
+                            active ? 'text-navy font-semibold bg-info-bg/40' : 'text-ink-800'
+                          )}
+                          role="menuitem"
+                        >
+                          <span className="h-4 w-4 shrink-0" aria-hidden>
+                            {t.icon}
+                          </span>
+                          {t.label}
+                        </button>
+                      )
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-// ─── Bottom nav (mobile) ────────────────────────────────────
-
-function MobileBottomNav({ tabs, activeTab, onChange }: NavProps) {
+/**
+ * One tab button. Used both in the real nav and in the hidden
+ * measurement layer (pass measuring=true to skip the active
+ * indicator which has side effects on layout).
+ */
+function DesktopTabButton({
+  tab,
+  active,
+  onClick,
+  measuring = false,
+}: {
+  tab: DashboardTab
+  active: boolean
+  onClick: () => void
+  measuring?: boolean
+}) {
   return (
-    <nav
-      className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-ink-100 shadow-[0_-4px_20px_rgba(11,37,69,0.08)]"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'relative inline-flex items-center gap-2 px-4 py-3.5 text-[0.875rem] font-semibold tracking-tight whitespace-nowrap',
+        'transition-colors duration-150 ease-out-soft min-h-touch',
+        active ? 'text-navy' : 'text-ink-400 hover:text-ink-600'
+      )}
+      tabIndex={measuring ? -1 : 0}
     >
-      <div className="flex items-stretch">
-        {tabs.map((t) => {
-          const active = t.id === activeTab
-          return (
+      <span className={cn('h-4 w-4', active && 'text-navy')} aria-hidden>
+        {tab.icon}
+      </span>
+      {tab.label}
+      {active && !measuring && (
+        <motion.span
+          layoutId="rt-sc-desktop-tab-indicator"
+          className="absolute inset-x-2 bottom-0 h-[2.5px] bg-gold rounded-t-full"
+          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+        />
+      )}
+    </button>
+  )
+}
+
+// ─── Bottom nav (mobile) — fixed N + Plus overflow ──────────
+//
+// Phones don't benefit from measurement-based overflow (tabs must
+// be finger-sized, so there's never "extra room"). We pick a fixed
+// directCount (default 4) and push anything beyond that into a
+// Plus button that opens a sheet listing the hidden tabs.
+
+function MobileBottomNav({
+  tabs,
+  activeTab,
+  onChange,
+  directCount,
+}: NavProps & { directCount: number }) {
+  const [sheetOpen, setSheetOpen] = useState(false)
+
+  // Back-button / Escape handling for the mobile overflow sheet.
+  // Without this, tapping the Android back button while the sheet
+  // was open would navigate the user out of the dashboard instead
+  // of just closing the sheet.
+  useDismissibleLayer({
+    open: sheetOpen,
+    onClose: () => setSheetOpen(false),
+  })
+
+  const needsPlus = tabs.length > directCount
+  const visible = needsPlus ? tabs.slice(0, directCount) : tabs
+  const overflow = needsPlus ? tabs.slice(directCount) : []
+
+  const activeInOverflow = overflow.some((t) => t.id === activeTab)
+  const activeOverflowTab = overflow.find((t) => t.id === activeTab)
+
+  function pickOverflow(id: string) {
+    setSheetOpen(false)
+    onChange(id)
+  }
+
+  return (
+    <>
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-ink-100 shadow-[0_-4px_20px_rgba(11,37,69,0.08)]"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex items-stretch">
+          {visible.map((t) => {
+            const active = t.id === activeTab
+            return (
+              <MobileTabButton
+                key={t.id}
+                tab={t}
+                active={active}
+                onClick={() => onChange(t.id)}
+              />
+            )
+          })}
+
+          {needsPlus && (
             <button
-              key={t.id}
               type="button"
-              onClick={() => onChange(t.id)}
+              onClick={() => setSheetOpen(true)}
               className={cn(
-                'relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px]',
-                'transition-colors duration-150',
-                active ? 'text-navy' : 'text-ink-400'
+                'relative flex-1 flex flex-col items-center justify-center min-h-[64px] gap-1 py-2.5 transition-colors duration-150',
+                activeInOverflow ? 'text-navy' : 'text-ink-400'
               )}
-              aria-current={active ? 'page' : undefined}
+              aria-haspopup="menu"
             >
-              {/* Active indicator pill behind icon */}
-              {active && (
+              {activeInOverflow && (
                 <motion.span
                   layoutId="rt-sc-mobile-nav-pill"
                   className="absolute top-1.5 h-7 w-12 rounded-full bg-info-bg"
@@ -359,24 +626,136 @@ function MobileBottomNav({ tabs, activeTab, onChange }: NavProps) {
               <span
                 className={cn(
                   'relative z-10 h-5 w-5 transition-transform',
-                  active ? 'scale-100' : 'scale-95'
+                  activeInOverflow ? 'scale-100' : 'scale-95'
                 )}
                 aria-hidden
               >
-                {t.icon}
+                <MoreHorizontal className="h-full w-full" />
               </span>
               <span
                 className={cn(
-                  'relative z-10 text-[0.65rem] tracking-wide leading-none',
-                  active ? 'font-bold' : 'font-medium'
+                  'relative z-10 tracking-wide leading-none truncate max-w-full px-0.5 text-[0.65rem]',
+                  activeInOverflow ? 'font-bold' : 'font-medium'
                 )}
               >
-                {t.label}
+                {activeInOverflow && activeOverflowTab ? activeOverflowTab.label : 'Plus'}
               </span>
             </button>
-          )
-        })}
-      </div>
-    </nav>
+          )}
+        </div>
+      </nav>
+
+      {/* Overflow sheet — mobile only. Slides up from the bottom
+          with the overflow tabs as big tap targets. */}
+      <AnimatePresence>
+        {sheetOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="md:hidden fixed inset-0 bg-navy/40 z-50"
+              onClick={() => setSheetOpen(false)}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+              className="md:hidden fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl overflow-hidden"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+              role="menu"
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-ink-100">
+                <p className="font-display text-[1rem] font-semibold text-navy">
+                  Plus d'options
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSheetOpen(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-ink-400 hover:bg-ink-50 hover:text-navy transition-colors"
+                  aria-label="Fermer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="py-1">
+                {overflow.map((t) => {
+                  const active = t.id === activeTab
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => pickOverflow(t.id)}
+                      className={cn(
+                        'w-full flex items-center gap-3 px-4 py-3.5 text-[0.9rem] transition-colors min-h-touch',
+                        active
+                          ? 'text-navy font-semibold bg-info-bg/40'
+                          : 'text-ink-800 hover:bg-ink-50'
+                      )}
+                      role="menuitem"
+                    >
+                      <span className="h-5 w-5 shrink-0" aria-hidden>
+                        {t.icon}
+                      </span>
+                      {t.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
+  )
+}
+
+function MobileTabButton({
+  tab,
+  active,
+  onClick,
+}: {
+  tab: DashboardTab
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'relative flex-1 flex flex-col items-center justify-center min-h-[64px] gap-1 py-2.5',
+        'transition-colors duration-150',
+        active ? 'text-navy' : 'text-ink-400'
+      )}
+      aria-current={active ? 'page' : undefined}
+    >
+      {active && (
+        <motion.span
+          layoutId="rt-sc-mobile-nav-pill"
+          className="absolute top-1.5 h-7 w-12 rounded-full bg-info-bg"
+          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+        />
+      )}
+      <span
+        className={cn(
+          'relative z-10 h-5 w-5 transition-transform',
+          active ? 'scale-100' : 'scale-95'
+        )}
+        aria-hidden
+      >
+        {tab.icon}
+      </span>
+      <span
+        className={cn(
+          'relative z-10 tracking-wide leading-none truncate max-w-full px-0.5 text-[0.65rem]',
+          active ? 'font-bold' : 'font-medium'
+        )}
+      >
+        {tab.label}
+      </span>
+    </button>
   )
 }

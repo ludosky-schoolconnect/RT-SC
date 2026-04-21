@@ -28,7 +28,7 @@ import {
   classeDoc,
   professeurDoc,
 } from '@/lib/firestore-keys'
-import { genererPasskeyProf } from '@/lib/benin'
+import { genererPasskeyCaisse, genererPasskeyProf } from '@/lib/benin'
 import type { Professeur, Classe } from '@/types/models'
 
 // ─── Approve ────────────────────────────────────────────────
@@ -238,6 +238,7 @@ export function useSetProfPrincipal() {
 // ─── Regenerate prof passkey (the school-wide signup code) ──
 
 export function useRegeneratePasskeyProf() {
+  const qc = useQueryClient()
   return useMutation({
     mutationFn: async (): Promise<string> => {
       const newKey = genererPasskeyProf()
@@ -247,6 +248,116 @@ export function useRegeneratePasskeyProf() {
         { merge: true }
       )
       return newKey
+    },
+    onSuccess: () => {
+      // Refetch so the PasskeyProfPanel displays the new code without
+      // requiring a page refresh (it reads from useEcoleSecurite).
+      qc.invalidateQueries({ queryKey: ['ecole', 'securite'] })
+    },
+  })
+}
+
+// ─── Regenerate caisse passkey (separate from prof) ─────────
+
+export function useRegeneratePasskeyCaisse() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (): Promise<string> => {
+      const newKey = genererPasskeyCaisse()
+      await setDoc(
+        docRef(ecoleSecuriteDoc()),
+        { passkeyCaisse: newKey },
+        { merge: true }
+      )
+      return newKey
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ecole', 'securite'] })
+    },
+  })
+}
+
+// ─── Update role ────────────────────────────────────────────
+//
+// Changes a prof's role between admin / prof / caissier.
+//
+// Side effect: when switching TO 'caissier', classesIds + matieres
+// are cleared. The caissier role doesn't teach, so these fields
+// would be stale/misleading if left populated. If the admin later
+// demotes them back to 'prof', they'll need to re-assign.
+//
+// The reverse (caissier → prof) leaves arrays empty and admin
+// re-assigns classes manually. Same ceremony as onboarding a new
+// prof.
+//
+// This mutation also updates classes' professeursIds to remove the
+// prof from any classes they were in when going TO caissier — same
+// logic the "remove prof" / delete flow uses to avoid orphaned
+// class-side references.
+
+export interface UpdateProfRoleInput {
+  profId: string
+  role: 'admin' | 'prof' | 'caissier'
+}
+
+export function useUpdateProfRole() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ profId, role }: UpdateProfRoleInput) => {
+      // Read the current prof doc to know which classes to clean up
+      // if we're switching to caissier.
+      const profSnap = await getDoc(docRef(professeurDoc(profId)))
+      if (!profSnap.exists()) throw new Error('Professeur introuvable.')
+      const prof = profSnap.data() as Omit<Professeur, 'id'>
+      const previousClasses = prof.classesIds ?? []
+
+      if (role === 'caissier') {
+        // 1. Clear caissier's teaching fields
+        await updateDoc(docRef(professeurDoc(profId)), {
+          role,
+          classesIds: [],
+          matieres: [],
+        })
+
+        // 2. Remove prof from each class's professeursIds. Missing
+        //    classes are tolerated — they were deleted separately.
+        for (const classeId of previousClasses) {
+          try {
+            await updateDoc(docRef(classeDoc(classeId)), {
+              professeursIds: arrayRemove(profId),
+            })
+          } catch (e) {
+            console.warn(
+              `[useUpdateProfRole] class ${classeId} cleanup skipped:`,
+              (e as Error).message
+            )
+          }
+        }
+      } else {
+        // Switching to admin or plain prof — just flip the role field.
+        // Classes and matieres stay put (admin keeps their assignments
+        // if they had any; prof keeps theirs).
+        await updateDoc(docRef(professeurDoc(profId)), { role })
+      }
+    },
+    // NOTE: no onMutate (no optimistic update). Two writers were
+    // racing for the ['profs'] cache:
+    //   - the optimistic setter (onMutate)
+    //   - the useProfs onSnapshot listener
+    // onSnapshot would sometimes fire between onMutate's write and
+    // the server confirming, overwriting the optimistic value with
+    // the pre-mutation state. Net effect: the role picker in the
+    // modal would flip back to the old role for a moment, or stay
+    // stale until the modal was reopened.
+    //
+    // mutationFn already awaits updateDoc, so by the time the
+    // promise resolves the Firestore write is committed and the
+    // very next onSnapshot fire carries the new role. No
+    // optimistic update needed — the listener is fast enough.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['profs'] })
+      qc.invalidateQueries({ queryKey: ['classes'] })
     },
   })
 }

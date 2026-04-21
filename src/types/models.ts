@@ -48,6 +48,10 @@ export interface EcoleConfig {
   devise?: string
   nbEleves?: number
   nbClasses?: number
+  /** Postal/street address of the school. Used on receipts + headers. */
+  adresse?: string
+  /** Main contact phone number. Used on receipts + parent comms. */
+  telephone?: string
 }
 
 export interface PeriodeRange {
@@ -93,7 +97,16 @@ export interface FinancesConfig {
 }
 
 export interface SecuriteConfig {
-  passkeyProf: string  // 6-digit code admin distributes
+  /** Legacy field — 6-digit code gating prof signup. */
+  passkeyProf: string
+  /**
+   * 6-digit code gating caissier signup (Phase 6d.2). Separate from
+   * passkeyProf so admin can rotate them independently. If the field
+   * is missing on a school's securite doc (fresh install or legacy
+   * schools that haven't migrated), caissier signup falls back to
+   * using passkeyProf — so no existing flow breaks during rollout.
+   */
+  passkeyCaisse?: string
 }
 
 export interface SubscriptionDoc {
@@ -102,6 +115,13 @@ export interface SubscriptionDoc {
   hasRequestedUnlock?: boolean
   fedaPayPublicKey?: string
   subscriptionPrice?: number  // default 15000 FCFA
+  subscriptionDurationMonths?: number  // default 1 month
+  /**
+   * WhatsApp number for SchoolConnect support, international format
+   * WITHOUT leading + or spaces (e.g. "22990123456"). Used to build
+   * wa.me links on the LockedPage. Set via dev.html.
+   */
+  supportWhatsAppNumber?: string
 }
 
 export interface ExamensConfig {
@@ -113,7 +133,17 @@ export interface ExamensConfig {
 // /professeurs/{uid}
 // ─────────────────────────────────────────────────────────────
 
-export type ProfesseurRole = 'admin' | 'prof'
+/**
+ * Staff role. Exclusive — a user holds exactly one role at a time.
+ *
+ * - `admin`: full school management (classes, élèves, profs, pédagogie).
+ *   Cannot access Finances or Inscriptions in 6d+ (those are caissier-only).
+ * - `prof`: teacher. Gradebook, appel, bulletins. No admin surfaces.
+ * - `caissier`: dedicated cashier + admission officer. Terminal de caisse,
+ *   bilan, guichet d'admission. No teaching surfaces, no admin surfaces.
+ *   classesIds + matieres are forced empty when this role is assigned.
+ */
+export type ProfesseurRole = 'admin' | 'prof' | 'caissier'
 export type ProfesseurStatut = 'en_attente' | 'actif'
 
 export interface Professeur {
@@ -236,6 +266,33 @@ export interface Absence {
 }
 
 // ─────────────────────────────────────────────────────────────
+// /archived_absences/{auto}
+// Per-élève-per-matière-per-day historical record of appel-marked
+// absences. Originals from /presences/.absents{} are deleted as part
+// of the daily roll-over.
+// ─────────────────────────────────────────────────────────────
+
+export interface ArchivedAbsence {
+  id: string
+  classeId: string
+  classeNom: string       // denormalized at archive time
+  eleveId: string
+  eleveNom: string
+  /** Calendar day of the absence (YYYY-MM-DD) */
+  dateISO: string
+  /** Same as dateISO but as a Timestamp for orderBy queries */
+  date: Timestamp
+  matiereSlug: string
+  matiere: string         // human-readable, denormalized
+  heure: string           // "HH:MM" the prof saved during appel
+  raison?: string
+  prisPar: string         // prof name at the time
+  prisParUid?: string
+  /** When this archive row was written */
+  archivedAt: Timestamp
+}
+
+// ─────────────────────────────────────────────────────────────
 // /classes/{id}/eleves/{id}/bulletins/{periode}
 // Doc ID = periode (e.g. "Trimestre 1")
 // ─────────────────────────────────────────────────────────────
@@ -276,6 +333,14 @@ export interface Paiement {
   montant: number  // FCFA
   date: Timestamp
   caissier: string
+  /**
+   * Optional method tag. Freeform but common values: 'espèces',
+   * 'mobile money', 'chèque', 'virement'. Legacy docs without this
+   * field default to 'espèces' in the UI.
+   */
+  methode?: string
+  /** Optional short note (e.g. "1ère tranche", "bonus reçu"). */
+  note?: string
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -421,6 +486,16 @@ export interface VigilanceAlerte {
 // /pre_inscriptions/{auto}
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Statut values match legacy strings exactly to keep public-form
+ * compatibility (parent can re-check status via tracking code).
+ */
+export type StatutPreInscriptionV2 =
+  | 'En attente'
+  | 'Approuvé'
+  | 'Refusé'
+  | 'Inscrit Officiellement'
+
 export interface PreInscription {
   id: string
   nom: string
@@ -428,27 +503,106 @@ export interface PreInscription {
   date_naissance: string  // YYYY-MM-DD
   niveauSouhaite: string
   contactParent: string
-  /** Document name → base64 string */
-  documents: { [docName: string]: string }
+  /**
+   * Legacy embedded documents (base64 in the doc itself).
+   * NEW dossiers use the /documents subcollection instead — leave this
+   * field empty/undefined for those. The admin viewer reads BOTH so
+   * existing legacy data still renders.
+   */
+  documents?: { [docName: string]: string }
   dateSoumission: Timestamp
-  statut: StatutPreInscription
+  /** Renamed: now uses StatutPreInscriptionV2 values. */
+  statut: StatutPreInscriptionV2
   trackingCode: string  // SC-XXXXXX
   raisonRefus?: string
   categorieDossier?: string
+  /** Set when admin approves; format DD/MM/YYYY for legacy compat. */
   dateRV?: string
+  /** Destination class assigned at approval time. */
+  classeCible?: string
+  /** How many times the parent has reprogrammed their RV (cap at 3). */
+  reprogCount?: number
+}
+
+/**
+ * Per-document storage in subcollection — one doc per uploaded file.
+ * Path: /pre_inscriptions/{piId}/documents/{slugifiedDocName}
+ *
+ * Each doc is its own ~1MB envelope, so the inscription doesn't bloat
+ * and admin's listing query doesn't pull file data unless requested.
+ */
+export interface PreInscriptionDocument {
+  id: string
+  /** Display name as set by admin in SettingsInscription. */
+  nom: string
+  /**
+   * Data URL with MIME type. e.g. "data:image/jpeg;base64,/9j/4AAQ..."
+   * Compressed client-side before upload.
+   */
+  dataUrl: string
+  /** Original file size in bytes (for display/audit). */
+  size: number
+  /** MIME type extracted from upload. */
+  mimeType: string
+  uploadedAt: Timestamp
 }
 
 // ─────────────────────────────────────────────────────────────
 // /settings_inscription/config
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Per-doc spec inside a category. Replaces the legacy magic-string
+ * syntax (`*name*` for required, `"name"` for optional).
+ */
+export interface InscriptionDocSpec {
+  nom: string       // "Acte de naissance"
+  requis: boolean   // true = star, blocks form submission if empty
+}
+
+/**
+ * A category of applicants (e.g. "Nouveaux élèves" vs "Anciens
+ * élèves"). Each has its own document checklist. Public form asks
+ * the parent which category they belong to first, then shows only
+ * that category's documents.
+ */
+export interface InscriptionCategorie {
+  nom: string                       // "Nouveaux élèves"
+  documents: InscriptionDocSpec[]
+}
+
 export interface SettingsInscription {
   /**
-   * Array with `[CategoryName]` markers and document names.
-   * Example: ['[Nouveau]', 'Acte de Naissance', 'Photo', '[Transfert]', 'Ancien bulletin']
+   * Categories. If empty, the public form falls back to documentsSimple
+   * (no category picker shown).
    */
-  documents: string[]
+  categories?: InscriptionCategorie[]
+  /**
+   * Flat doc list used when categories is empty (for schools with
+   * just one applicant profile).
+   */
+  documentsSimple?: InscriptionDocSpec[]
+  /** Free-text list of items parents must bring (uniforms, kits, etc.) */
   materiel: string[]
+  /** Daily cap on physical RV slots. Legacy hardcoded 35. */
+  rendezVousPlacesParJour?: number
+  /** Today + N days = earliest RV. Legacy hardcoded 3. */
+  rendezVousDelaiMinJours?: number
+  /**
+   * Legacy raw document strings (with [Category] / *required* / "optional"
+   * syntax). Present until admin migrates. Ignored once `categories` or
+   * `documentsSimple` is set.
+   */
+  documents?: string[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// /rv_counters/{DD-MM-YYYY}
+// One doc per date, tracking how many RV slots are taken.
+// ─────────────────────────────────────────────────────────────
+
+export interface RvCounter {
+  count: number
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -492,3 +646,20 @@ export interface Annonce {
 // /archive/{annee}/...
 // Same shapes as live collections, just nested under year
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * Metadata doc written at /archive/{annee} by the year rollover.
+ *
+ * Exists so the browse UI can list archived years via getDocs on
+ * `/archive` (listCollections isn't exposed in the Firebase JS SDK).
+ * Carries denormalized counts so the years-list card doesn't need to
+ * aggregate subcollections.
+ */
+export interface ArchivedYear {
+  /** e.g. "2024-2025" */
+  annee: string
+  classesCount: number
+  elevesCount: number
+  errorsCount: number
+  archivedAt: Timestamp
+}

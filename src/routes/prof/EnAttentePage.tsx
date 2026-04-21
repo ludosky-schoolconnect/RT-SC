@@ -1,10 +1,15 @@
 /**
- * RT-SC · Prof "en attente d'approbation" screen.
+ * RT-SC · Staff "en attente d'approbation" screen.
  *
- * Shown to a professeur who has signed up but whose statut is still 'en_attente'.
- * The AuthProvider's live snapshot of the prof's doc means as soon as an admin
- * sets statut to 'actif', this screen automatically transitions away (the
- * useEffect navigates to /prof) — no manual refresh needed.
+ * Shown to a professeur OR caissier who has signed up but whose
+ * statut is still 'en_attente'. The AuthProvider's live snapshot
+ * of the professeurs/{uid} doc means as soon as an admin flips
+ * statut to 'actif', this screen automatically transitions away
+ * (the useEffect navigates to the right dashboard based on role) —
+ * no manual refresh needed.
+ *
+ * Copy is role-aware: "votre espace professeur" vs "votre espace
+ * caisse" so the user isn't confused about where they're going.
  */
 
 import { useEffect } from 'react'
@@ -20,10 +25,18 @@ export default function EnAttentePage() {
   const navigate = useNavigate()
   const { profil } = useAuth()
 
-  // Auto-redirect when admin approves
+  const roleLabel =
+    profil?.role === 'caissier' ? 'caisse' : 'professeur'
+  const displayRole =
+    profil?.role === 'caissier' ? 'Caissier' : 'Professeur'
+
+  // Auto-redirect when admin approves — both roles supported.
   useEffect(() => {
-    if (profil?.role === 'prof' && profil.statut === 'actif') {
+    if (!profil || profil.statut !== 'actif') return
+    if (profil.role === 'prof') {
       navigate('/prof', { replace: true })
+    } else if (profil.role === 'caissier') {
+      navigate('/caissier', { replace: true })
     }
   }, [profil, navigate])
 
@@ -58,9 +71,10 @@ export default function EnAttentePage() {
         </h1>
 
         <p className="text-[0.9375rem] text-ink-600 leading-relaxed mb-6">
-          Bonjour {profil?.nom?.split(' ')[0] ?? 'Professeur'}. Votre compte a bien
-          été créé. L'administration doit valider votre profil avant que vous
-          puissiez accéder à votre tableau de bord.
+          Bonjour {profil?.nom?.split(' ')[0] ?? displayRole}. Votre compte{' '}
+          <strong className="text-navy">{roleLabel}</strong> a bien été créé.
+          L'administration doit valider votre profil avant que vous puissiez
+          accéder à votre espace.
         </p>
 
         <div className="flex items-center gap-3 justify-center text-[0.78rem] text-ink-400 bg-ink-50 rounded-md px-4 py-3 mb-6">

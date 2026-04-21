@@ -71,6 +71,9 @@ export function useCreateClasse() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['classes'] })
+      // Dashboard counts include class count — refetch so admin
+      // sees the new class in the headline stats immediately.
+      void qc.refetchQueries({ queryKey: ['school-stats'] })
     },
   })
 }
@@ -175,6 +178,12 @@ export function useDeleteClasse() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['classes'] })
+      // Deleting a class cascade-deletes its élèves; the school-wide
+      // élève list must be refreshed so Finances doesn't keep showing
+      // ghost students from the dead class.
+      void qc.refetchQueries({ queryKey: ['eleves', 'all'] })
+      // Dashboard counts depend on class + élève totals.
+      void qc.refetchQueries({ queryKey: ['school-stats'] })
     },
   })
 }

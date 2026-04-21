@@ -71,7 +71,12 @@ export function calculerBilanPaiements(totalPaye: number, cible: number): Paieme
 // FCFA formatting
 // ─────────────────────────────────────────────────────────────
 
+/** Compact variant used by some older UI surfaces (no "FCFA" suffix).
+ * Uses ASCII-space grouping, same reason as the canonical formatFCFA
+ * in usePaiements.ts — avoids jsPDF rendering U+202F as a slash.
+ */
 export function formatFCFA(amount: number | undefined | null): string {
-  const n = Number(amount ?? 0)
-  return n.toLocaleString('fr-FR') + ' F'
+  const n = Math.round(Number(amount ?? 0))
+  const grouped = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+  return `${n < 0 ? '-' : ''}${grouped} F`
 }

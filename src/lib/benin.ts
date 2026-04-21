@@ -102,6 +102,18 @@ export function genererPasskeyProf(): string {
 }
 
 /**
+ * Caisse access passkey (admin sets this): 6 digits.
+ * Required during caissier signup. Same format as passkeyProf but
+ * stored under a separate Firestore field so admin can rotate them
+ * independently — e.g. if a caissier leaves the school, rotating
+ * the caisse passkey locks out any cached copy they might have
+ * without disrupting prof signups.
+ */
+export function genererPasskeyCaisse(): string {
+  return pickFrom(DIGITS, 6)
+}
+
+/**
  * Pre-inscription tracking code: "SC-XXXXXX" base36.
  */
 export function genererTrackingCode(): string {

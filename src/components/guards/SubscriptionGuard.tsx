@@ -63,8 +63,19 @@ export function SubscriptionGuard({ children }: Props) {
           data.isManualLock === true ||
           (deadline ? new Date() > gracedDeadline : false)
 
-        // Unlock transition → full reload to clear stale state
-        if (previousLockState.current === true && !isLocked) {
+        // Unlock transition → full reload to clear stale state.
+        // EXCEPTION: if we're currently on /locked, DON'T reload —
+        // LockedPage's own post-payment navigation (navigate to /app
+        // with ?paid=true) handles the transition more smoothly. A
+        // reload here would race with that navigate and bounce the
+        // user back to /locked briefly before they see the success
+        // state. Letting LockedPage drive the transition keeps the
+        // "Paiement validé !" → dashboard flow clean.
+        if (
+          previousLockState.current === true &&
+          !isLocked &&
+          !window.location.pathname.startsWith('/locked')
+        ) {
           window.location.reload()
           return
         }

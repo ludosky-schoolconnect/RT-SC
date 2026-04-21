@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Building2, MapPin, Quote, Save } from 'lucide-react'
+import { Building2, MapPin, Phone, Quote, Save } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
@@ -27,6 +27,8 @@ export function SchoolIdentityCard() {
   const [nom, setNom] = useState('')
   const [ville, setVille] = useState('')
   const [devise, setDevise] = useState('')
+  const [adresse, setAdresse] = useState('')
+  const [telephone, setTelephone] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -34,6 +36,8 @@ export function SchoolIdentityCard() {
       setNom(config.nom ?? '')
       setVille(config.ville ?? '')
       setDevise(config.devise ?? '')
+      setAdresse(config.adresse ?? '')
+      setTelephone(config.telephone ?? '')
     }
   }, [config])
 
@@ -41,9 +45,11 @@ export function SchoolIdentityCard() {
     return (
       (nom.trim()) !== (config?.nom ?? '') ||
       (ville.trim()) !== (config?.ville ?? '') ||
-      (devise.trim()) !== (config?.devise ?? '')
+      (devise.trim()) !== (config?.devise ?? '') ||
+      (adresse.trim()) !== (config?.adresse ?? '') ||
+      (telephone.trim()) !== (config?.telephone ?? '')
     )
-  }, [config, nom, ville, devise])
+  }, [config, nom, ville, devise, adresse, telephone])
 
   async function save() {
     setError(null)
@@ -54,6 +60,8 @@ export function SchoolIdentityCard() {
         nom: nom.trim(),
         ville: ville.trim(),
         devise: devise.trim(),
+        adresse: adresse.trim(),
+        telephone: telephone.trim(),
       })
       toast.success("Identité de l'établissement mise à jour.")
     } catch {
@@ -95,6 +103,22 @@ export function SchoolIdentityCard() {
             onChange={(e) => setVille(e.target.value)}
             placeholder="Ex : Cotonou"
             leading={<MapPin className="h-4 w-4" />}
+          />
+          <Input
+            label="Adresse complète"
+            value={adresse}
+            onChange={(e) => setAdresse(e.target.value)}
+            placeholder="Ex : Quartier Houéto, derrière le marché central"
+            leading={<MapPin className="h-4 w-4" />}
+            hint="Apparaît sur les reçus de paiement."
+          />
+          <Input
+            label="Téléphone principal"
+            value={telephone}
+            onChange={(e) => setTelephone(e.target.value)}
+            placeholder="Ex : +229 01 97 00 00 00"
+            leading={<Phone className="h-4 w-4" />}
+            inputMode="tel"
           />
           <Textarea
             label="Devise"

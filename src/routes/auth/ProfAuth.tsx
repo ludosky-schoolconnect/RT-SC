@@ -49,16 +49,26 @@ export default function ProfAuth() {
   const { profil, hydrating } = useAuth()
   const [mode, setMode] = useState<Mode>('login')
 
-  // Forward authenticated profs once their profil arrives
+  // Forward authenticated profs once their profil arrives.
+  // Caissier role is valid here too (no separate caissier login
+  // surface — they create a prof account, admin promotes them).
   useEffect(() => {
     if (hydrating) return
     if (!profil) return
 
     if (profil.role === 'admin') {
       void signOut(auth)
-      toast.error("Cet espace est réservé aux professeurs.")
+      toast.error("Cet espace est réservé aux professeurs et caissiers.")
       return
     }
+
+    // Caissier — route to their dedicated dashboard.
+    if (profil.role === 'caissier') {
+      toast.success(`Bienvenue, ${profil.nom.split(' ')[0]}.`)
+      navigate('/caissier', { replace: true })
+      return
+    }
+
     if (profil.role !== 'prof') {
       void signOut(auth)
       return
@@ -285,7 +295,10 @@ function ProfSignupForm({ onDone }: SignupProps) {
 
       toast.success("Compte créé. En attente d'approbation par l'administration.")
       // Parent component's useEffect will pick up the profil and navigate
-      // to /prof/en-attente automatically. No manual nav needed.
+      // to /prof/en-attente automatically. Clear the button spinner so
+      // the user isn't staring at a loading state if the navigation
+      // takes a beat.
+      setSubmitting(false)
     } catch (err) {
       setError(translateAuthError(err))
       setSubmitting(false)

@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { CalendarOff, LayoutGrid, ListChecks } from 'lucide-react'
+import { Archive, CalendarOff, ClipboardCheck, LayoutGrid, ListChecks } from 'lucide-react'
 import { Section, SectionHeader } from '@/components/layout/Section'
 import { Select } from '@/components/ui/Select'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -29,8 +29,11 @@ import { nomClasse } from '@/lib/benin'
 import type { Classe } from '@/types/models'
 import { AbsencesClasseView } from './AbsencesClasseView'
 import { AbsencesEcoleView } from './AbsencesEcoleView'
+import { AppelsDuJourView } from './AppelsDuJourView'
+import { ArchiveAdminTab } from '@/routes/admin/tabs/archive/ArchiveAdminTab'
+import { useArchiveRollover } from '@/hooks/useArchiveRollover'
 
-type ViewMode = 'school' | 'classe'
+type ViewMode = 'school' | 'classe' | 'appels' | 'archive'
 
 interface Props {
   /** Classes the staff member can see. Empty = render the empty state. */
@@ -51,8 +54,15 @@ export function VieScolaireTab({
   kicker = 'Vie scolaire',
   description,
 }: Props) {
-  // Admin defaults to school-wide; prof has no school view, always classe.
-  const [mode, setMode] = useState<ViewMode>(canManage ? 'school' : 'classe')
+  // Daily archive rollover — triggers on admin's first Vie scolaire
+  // visit per session, regardless of which mode they land on. Profs
+  // pass canRun=false (rules would block the writes anyway).
+  useArchiveRollover(canManage)
+
+  // Default mode:
+  //   - Admin → 'appels' (daily monitoring, most useful)
+  //   - Prof  → 'appels' too (read-only view of their classes' appels)
+  const [mode, setMode] = useState<ViewMode>('appels')
 
   const [classeId, setClasseId] = useState<string>(
     defaultClasseId ?? availableClasses[0]?.id ?? ''
@@ -74,11 +84,15 @@ export function VieScolaireTab({
     description ??
     (availableClasses.length === 0
       ? "Aucune classe accessible pour l'instant."
-      : mode === 'school'
-        ? "Triage école entière. Filtrez par statut, recherchez, validez ou refusez en un clic."
-        : selected
-          ? `${nomClasse(selected)} — vue détaillée.`
-          : 'Choisissez une classe.')
+      : mode === 'appels'
+        ? "Absences marquées du jour, groupées par classe et par matière."
+        : mode === 'school'
+          ? "Déclarations d'élèves et parents — validez, refusez ou supprimez."
+          : mode === 'archive'
+            ? "Historique des absences marquées, classées par date."
+            : selected
+              ? `${nomClasse(selected)} — vue détaillée.`
+              : 'Choisissez une classe.')
 
   return (
     <Section>
@@ -100,25 +114,47 @@ export function VieScolaireTab({
         />
       ) : (
         <>
-          {/* Mode switcher — admin only (profs always see per-class) */}
-          {canManage && (
-            <div className="mb-4 inline-flex items-center gap-1 rounded-lg bg-ink-100/60 p-1">
+          {/* Mode switcher — shape depends on role */}
+          <div className="mb-4 inline-flex items-center gap-1 rounded-lg bg-ink-100/60 p-1 flex-wrap">
+            <ModeBtn
+              active={mode === 'appels'}
+              icon={<ClipboardCheck className="h-4 w-4" />}
+              label="Appels du jour"
+              onClick={() => setMode('appels')}
+            />
+            {canManage && (
               <ModeBtn
                 active={mode === 'school'}
                 icon={<ListChecks className="h-4 w-4" />}
-                label="Triage école"
+                label="Déclarations"
                 onClick={() => setMode('school')}
               />
+            )}
+            <ModeBtn
+              active={mode === 'classe'}
+              icon={<LayoutGrid className="h-4 w-4" />}
+              label="Par classe"
+              onClick={() => setMode('classe')}
+            />
+            {canManage && (
               <ModeBtn
-                active={mode === 'classe'}
-                icon={<LayoutGrid className="h-4 w-4" />}
-                label="Par classe"
-                onClick={() => setMode('classe')}
+                active={mode === 'archive'}
+                icon={<Archive className="h-4 w-4" />}
+                label="Archive"
+                onClick={() => setMode('archive')}
               />
-            </div>
+            )}
+          </div>
+
+          {/* Appels du jour */}
+          {mode === 'appels' && (
+            <AppelsDuJourView
+              availableClasses={availableClasses}
+              canManage={canManage}
+            />
           )}
 
-          {/* School-wide triage */}
+          {/* School-wide declarations (admin only) */}
           {mode === 'school' && canManage && <AbsencesEcoleView />}
 
           {/* Per-class drill-down */}
@@ -143,6 +179,9 @@ export function VieScolaireTab({
               )}
             </>
           )}
+
+          {/* Archive (admin-only) */}
+          {mode === 'archive' && canManage && <ArchiveAdminTab />}
         </>
       )}
     </Section>

@@ -34,6 +34,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
@@ -48,6 +49,7 @@ import {
   archiveEleveDoc,
   archiveEleveSubCol,
   archiveEmploiDuTempsSeancesCol,
+  archiveYearDoc,
   bulletinsCol,
   classeDoc,
   collesCol,
@@ -58,6 +60,7 @@ import {
   notesCol,
   paiementsCol,
   presencesCol,
+  professeursCol,
   vigilanceCol,
 } from '@/lib/firestore-keys'
 import { genererClassePasskey } from '@/lib/benin'
@@ -125,6 +128,19 @@ export async function executeTransition({
 
   for (const dec of decisions) {
     try {
+      // Pre-flight: does this élève still exist in the source class?
+      // If not (e.g. admin re-ran the modal after a partial failure, or
+      // the doc was already moved in a prior session), we don't error —
+      // we just skip. The final archive step will reconcile.
+      const sourceRef = docRef(eleveDoc(sourceClasseId, dec.eleveId))
+      const existsSnap = await getDoc(sourceRef)
+      if (!existsSnap.exists()) {
+        // Silently count as success — whatever the intent, the work is
+        // already done (or the élève is no longer here to worry about).
+        result.successCount++
+        continue
+      }
+
       if (dec.statut === 'admis') {
         if (!dec.destClasseId) {
           throw new Error('Classe de destination manquante')
@@ -132,7 +148,7 @@ export async function executeTransition({
         await moveEleveBetweenClasses(sourceClasseId, dec.eleveId, dec.destClasseId)
       } else if (dec.statut === 'echoue') {
         // Just mark; the final archive step will handle the persistence
-        await updateDoc(docRef(eleveDoc(sourceClasseId, dec.eleveId)), {
+        await updateDoc(sourceRef, {
           _transfere: true,
         })
       } else if (dec.statut === 'abandonne') {
@@ -250,6 +266,23 @@ export async function executeFinalArchive({
     errors: [],
   }
 
+  // 0. Double-rollover guard. If `archive/{annee}` metadata doc already
+  // exists, this année has been archived once before. Running again would
+  // overwrite the archive snapshots with empty data (the live collections
+  // were emptied on the first pass) — silent corruption. Bail loudly.
+  try {
+    const archiveMetaSnap = await getDoc(docRef(archiveYearDoc(annee)))
+    if (archiveMetaSnap.exists()) {
+      throw new Error(
+        `L'année ${annee} a déjà été archivée. Ré-exécuter écraserait les archives existantes avec des données vides. Pour rejouer l'opération, supprimez d'abord l'archive de ${annee} dans la zone "Archives annuelles".`
+      )
+    }
+  } catch (e) {
+    // Re-throw the user-facing message; only surface unexpected errors as warnings.
+    if (e instanceof Error && e.message.startsWith("L'année")) throw e
+    result.errors.push(`Vérification archive existante: ${(e as Error).message}`)
+  }
+
   // 1. Read every class
   const classesSnap = await getDocs(collection(db, 'classes'))
   const classes = classesSnap.docs
@@ -283,8 +316,18 @@ export async function executeFinalArchive({
         // destination class now. Their _transfere flag tells us not to archive
         // them HERE (they belong to the new year, not the old one). But we
         // still want to clear the _transfere flag for the new year.
+        //
+        // We wrap the reset in its own try/catch so a rules denial on one
+        // élève doesn't abort the class's whole pass. If the reset fails,
+        // log a warning — admin may need to manually clear it next year.
         if (eleveData._transfere === true) {
-          await updateDoc(eDoc.ref, { _transfere: false })
+          try {
+            await updateDoc(eDoc.ref, { _transfere: false })
+          } catch (e) {
+            result.errors.push(
+              `Flag _transfere non réinitialisé pour ${eleveId} (classe ${classeId}): ${(e as Error).message}`
+            )
+          }
           continue
         }
 
@@ -349,6 +392,52 @@ export async function executeFinalArchive({
   }
   onProgress?.('vigilance', 1, 1)
 
+  // 2bis. Clear prof assignments — every Professeur's classesIds + matieres
+  // get reset to []. Reasoning: classes are reborn with new IDs effectively
+  // (same doc, but reset state — new passkey, no PP), and the new année
+  // requires fresh assignments anyway. Without this, profs keep dangling
+  // references to the previous configuration and the new année's class
+  // setup starts from a broken state.
+  //
+  // PP role (`profPrincipalDe` was already nulled on the Classe side in
+  // step 1e). Here we ensure the prof-side mirror is also clean.
+  //
+  // We DON'T touch role/statut/email/nom — those are identity fields, not
+  // year-scoped assignments.
+  onProgress?.('profs', 0, 1)
+  try {
+    const profsSnap = await getDocs(collection(db, professeursCol()))
+    let cleared = 0
+    let failed = 0
+    for (const profDoc of profsSnap.docs) {
+      try {
+        await updateDoc(profDoc.ref, {
+          classesIds: [],
+          matieres: [],
+        })
+        cleared++
+      } catch (e) {
+        failed++
+        // Log but don't abort — one prof failing shouldn't block the rest
+        console.warn(
+          `[rollover] Prof ${profDoc.id} clear failed:`,
+          (e as Error).message
+        )
+      }
+    }
+    if (failed > 0) {
+      result.errors.push(
+        `Affectations professeurs: ${failed} sur ${profsSnap.docs.length} non réinitialisé${failed > 1 ? 's' : ''}`
+      )
+    }
+    void cleared
+  } catch (e) {
+    result.errors.push(
+      `Réinitialisation des affectations professeurs: ${(e as Error).message}`
+    )
+  }
+  onProgress?.('profs', 1, 1)
+
   // 3. Archive + clear annonces
   onProgress?.('annonces', 0, 1)
   try {
@@ -361,6 +450,22 @@ export async function executeFinalArchive({
     result.errors.push(`Annonces: ${(e as Error).message}`)
   }
   onProgress?.('annonces', 1, 1)
+
+  // 3bis. Write the archive year metadata doc. This is what the browse
+  // UI queries to list archived years — without it, listing requires
+  // `listCollections` which the Firebase JS SDK doesn't expose on the
+  // client. The doc carries denormalized counts for the years-list card.
+  try {
+    await setDoc(docRef(archiveYearDoc(annee)), {
+      annee,
+      classesCount: result.classesProcessed,
+      elevesCount: result.elevesArchived,
+      errorsCount: result.errors.length,
+      archivedAt: serverTimestamp(),
+    })
+  } catch (e) {
+    result.errors.push(`Archive metadata: ${(e as Error).message}`)
+  }
 
   // 4. Bump anneeActive
   onProgress?.('annee', 0, 1)

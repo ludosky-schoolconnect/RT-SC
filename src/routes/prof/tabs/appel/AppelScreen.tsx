@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, ChevronDown, Check, Clock, Search, X, Save,
@@ -78,25 +79,46 @@ export function AppelScreen({
   const existingSlot: PresenceSlot | undefined = presenceDoc?.[matiereSlug]
   const dejaPris = !!existingSlot?.pris_par
 
+  // Lock body scroll while the appel is mounted — without this, the
+  // dashboard underneath can scroll and bleeds through behind our
+  // overlay. Restore on unmount.
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [])
+
   // ── Local marks (everyone defaults to present) ──────────────
   const [marks, setMarks] = useState<Map<string, Etat>>(new Map())
+  // Per-élève raison string (only meaningful when state is 'absent').
+  // Empty string = "raison non précisée"; non-empty = saved verbatim.
+  const [raisons, setRaisons] = useState<Map<string, string>>(new Map())
   const [seedFromSlotId, setSeedFromSlotId] = useState<string | null>(null)
 
   // Hydrate from existing slot once élèves arrive (or when slot itself
   // changes via snapshot, e.g. another prof edited concurrently).
   useEffect(() => {
     if (loadingEleves) return
-    // Compute a stable signature of "whose marks are these from"
     const sig = `${dateISO}-${matiereSlug}-${existingSlot?.pris_a?.toMillis?.() ?? 'fresh'}`
     if (sig === seedFromSlotId) return
 
-    const next = new Map<string, Etat>()
-    eleves.forEach((e) => next.set(e.id, 'present'))
+    const nextMarks = new Map<string, Etat>()
+    const nextRaisons = new Map<string, string>()
+    eleves.forEach((e) => nextMarks.set(e.id, 'present'))
     if (existingSlot) {
-      Object.keys(existingSlot.absents ?? {}).forEach((id) => next.set(id, 'absent'))
-      Object.keys(existingSlot.retards ?? {}).forEach((id) => next.set(id, 'retard'))
+      Object.entries(existingSlot.absents ?? {}).forEach(([id, mark]) => {
+        nextMarks.set(id, 'absent')
+        // Preserve raison if present in stored doc
+        if (mark?.raison) nextRaisons.set(id, mark.raison)
+      })
+      Object.keys(existingSlot.retards ?? {}).forEach((id) =>
+        nextMarks.set(id, 'retard')
+      )
     }
-    setMarks(next)
+    setMarks(nextMarks)
+    setRaisons(nextRaisons)
     setSeedFromSlotId(sig)
   }, [eleves, existingSlot, loadingEleves, dateISO, matiereSlug, seedFromSlotId])
 
@@ -126,6 +148,26 @@ export function AppelScreen({
       next.set(eleveId, etat)
       return next
     })
+    // When a student is no longer absent, drop their raison so it doesn't
+    // ghost back into the save payload if they're flipped to absent again.
+    if (etat !== 'absent') {
+      setRaisons((prev) => {
+        if (!prev.has(eleveId)) return prev
+        const next = new Map(prev)
+        next.delete(eleveId)
+        return next
+      })
+    }
+  }
+
+  function setRaison(eleveId: string, raison: string) {
+    setRaisons((prev) => {
+      const next = new Map(prev)
+      const trimmed = raison.slice(0, 40)
+      if (trimmed) next.set(eleveId, trimmed)
+      else next.delete(eleveId)
+      return next
+    })
   }
 
   // ── Mass actions ────────────────────────────────────────────
@@ -133,6 +175,7 @@ export function AppelScreen({
     const next = new Map<string, Etat>()
     eleves.forEach((e) => next.set(e.id, 'present'))
     setMarks(next)
+    setRaisons(new Map())
   }
 
   // ── Save ────────────────────────────────────────────────────
@@ -143,8 +186,14 @@ export function AppelScreen({
     const retards: { [id: string]: RetardMark } = {}
     eleves.forEach((e) => {
       const v = marks.get(e.id) ?? 'present'
-      if (v === 'absent') absents[e.id] = { nom: e.nom, heure }
-      else if (v === 'retard') retards[e.id] = { nom: e.nom, heure }
+      if (v === 'absent') {
+        const r = raisons.get(e.id)?.trim()
+        absents[e.id] = r
+          ? { nom: e.nom, heure, raison: r }
+          : { nom: e.nom, heure }
+      } else if (v === 'retard') {
+        retards[e.id] = { nom: e.nom, heure }
+      }
     })
 
     // Friendly confirm if NO ONE was marked absent or late — likely a mistake
@@ -177,11 +226,11 @@ export function AppelScreen({
     }
   }
 
-  return (
-    <div className="min-h-dvh bg-ink-50 flex flex-col">
+  return createPortal(
+    <div className="fixed inset-0 z-[60] bg-ink-50 flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-navy text-white shadow-md">
-        <div className="px-4 py-3 flex items-center gap-3">
+      <header className="shrink-0 bg-navy text-white shadow-md">
+        <div className="px-4 py-3 flex items-center gap-3" style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}>
           <button
             type="button"
             onClick={onClose}
@@ -223,88 +272,96 @@ export function AppelScreen({
         </div>
       </header>
 
-      {/* Already-submitted banner */}
-      {dejaPris && (
-        <div className="px-4 pt-3">
-          <div className="rounded-md border border-info/40 bg-info-bg/50 px-3 py-2.5 text-[0.82rem] text-ink-700 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-info shrink-0 mt-0.5" aria-hidden />
-            <div>
-              <strong className="font-semibold">Déjà pris par {existingSlot?.pris_par}.</strong>{' '}
-              Vous pouvez amender — l'enregistrement remplacera l'ancien.
+      {/* Scrollable middle */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        {/* Already-submitted banner */}
+        {dejaPris && (
+          <div className="px-4 pt-3">
+            <div className="rounded-md border border-info/40 bg-info-bg/50 px-3 py-2.5 text-[0.82rem] text-ink-700 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-info shrink-0 mt-0.5" aria-hidden />
+              <div>
+                <strong className="font-semibold">Déjà pris par {existingSlot?.pris_par}.</strong>{' '}
+                Vous pouvez amender — l'enregistrement remplacera l'ancien.
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Search bar */}
-      {eleves.length > 8 && (
-        <div className="px-4 pt-3">
-          <Input
-            type="search"
-            placeholder={`Rechercher parmi ${eleves.length} élèves…`}
-            value={searchQ}
-            onChange={(e) => setSearchQ(e.target.value)}
-            leading={<Search className="h-4 w-4 text-ink-400" />}
-            containerClassName="!gap-1"
-          />
-        </div>
-      )}
-
-      {/* Quick action: reset all to present */}
-      <div className="px-4 pt-3 flex justify-end">
-        <button
-          type="button"
-          onClick={markAllPresent}
-          className="text-[0.78rem] font-semibold text-navy hover:text-gold-dark transition-colors px-2 py-1 rounded !min-h-0 !min-w-0"
-        >
-          Réinitialiser (tous présents)
-        </button>
-      </div>
-
-      {/* Élève list */}
-      <div className="flex-1 px-4 pt-3 pb-32 space-y-2">
-        {loadingEleves ? (
-          <div className="flex justify-center py-10">
-            <Spinner size="lg" />
-          </div>
-        ) : eleves.length === 0 ? (
-          <EmptyState
-            icon={<X className="h-10 w-10" />}
-            title="Aucun élève"
-            description="Cette classe n'a aucun élève enregistré."
-          />
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon={<Search className="h-10 w-10" />}
-            title="Aucun résultat"
-            description={`Aucun élève ne correspond à « ${searchQ} ».`}
-          />
-        ) : (
-          <AnimatePresence initial={false}>
-            {filtered.map((e, i) => (
-              <motion.div
-                key={e.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  transition: { delay: Math.min(i * 0.012, 0.15) },
-                }}
-              >
-                <EleveAppelRow
-                  nom={e.nom}
-                  genre={e.genre}
-                  etat={marks.get(e.id) ?? 'present'}
-                  onChange={(etat) => setEtat(e.id, etat)}
-                />
-              </motion.div>
-            ))}
-          </AnimatePresence>
         )}
+
+        {/* Search bar */}
+        {eleves.length > 8 && (
+          <div className="px-4 pt-3">
+            <Input
+              type="search"
+              placeholder={`Rechercher parmi ${eleves.length} élèves…`}
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              leading={<Search className="h-4 w-4 text-ink-400" />}
+              containerClassName="!gap-1"
+            />
+          </div>
+        )}
+
+        {/* Quick action: reset all to present */}
+        <div className="px-4 pt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={markAllPresent}
+            className="text-[0.78rem] font-semibold text-navy hover:text-gold-dark transition-colors px-2 py-1 rounded !min-h-0 !min-w-0"
+          >
+            Réinitialiser (tous présents)
+          </button>
+        </div>
+
+        {/* Élève list */}
+        <div className="px-4 pt-3 pb-6 space-y-2">
+          {loadingEleves ? (
+            <div className="flex justify-center py-10">
+              <Spinner size="lg" />
+            </div>
+          ) : eleves.length === 0 ? (
+            <EmptyState
+              icon={<X className="h-10 w-10" />}
+              title="Aucun élève"
+              description="Cette classe n'a aucun élève enregistré."
+            />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={<Search className="h-10 w-10" />}
+              title="Aucun résultat"
+              description={`Aucun élève ne correspond à « ${searchQ} ».`}
+            />
+          ) : (
+            <AnimatePresence initial={false}>
+              {filtered.map((e, i) => (
+                <motion.div
+                  key={e.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    transition: { delay: Math.min(i * 0.012, 0.15) },
+                  }}
+                >
+                  <EleveAppelRow
+                    nom={e.nom}
+                    genre={e.genre}
+                    etat={marks.get(e.id) ?? 'present'}
+                    raison={raisons.get(e.id) ?? ''}
+                    onChange={(etat) => setEtat(e.id, etat)}
+                    onRaisonChange={(r) => setRaison(e.id, r)}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          )}
+        </div>
       </div>
 
-      {/* Sticky save bar */}
-      <div className="fixed bottom-0 inset-x-0 z-20 bg-white border-t border-ink-100 px-4 py-3 shadow-[0_-4px_12px_-2px_rgba(11,37,69,0.08)]">
+      {/* Save bar (in-flow, anchored at bottom of column) */}
+      <div
+        className="shrink-0 bg-white border-t border-ink-100 px-4 py-3 shadow-[0_-4px_12px_-2px_rgba(11,37,69,0.08)]"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.75rem)' }}
+      >
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <div className="flex-1 min-w-0 text-[0.78rem] text-ink-500">
             <span className="font-semibold text-ink-700">{counts.present}</span>{' '}
@@ -333,7 +390,8 @@ export function AppelScreen({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -382,12 +440,16 @@ function EleveAppelRow({
   nom,
   genre,
   etat,
+  raison,
   onChange,
+  onRaisonChange,
 }: {
   nom: string
   genre: 'M' | 'F' | string
   etat: Etat
+  raison: string
   onChange: (etat: Etat) => void
+  onRaisonChange: (raison: string) => void
 }) {
   const initials = nom.charAt(0).toUpperCase()
   const stripeColor =
@@ -400,56 +462,83 @@ function EleveAppelRow({
   return (
     <div
       className={cn(
-        'flex items-center gap-3 rounded-lg border bg-white pl-0 pr-2 py-2.5 shadow-sm transition-colors',
+        'rounded-lg border bg-white shadow-sm transition-colors overflow-hidden',
         etat === 'absent' && 'border-danger/30 bg-danger-bg/30',
         etat === 'retard' && 'border-warning/30 bg-warning-bg/30',
         etat === 'present' && 'border-ink-100'
       )}
     >
-      {/* Color stripe */}
-      <div className={cn('h-12 w-1 rounded-r-md ml-0', stripeColor)} aria-hidden />
+      <div className="flex items-center gap-3 pl-0 pr-2 py-2.5">
+        {/* Color stripe */}
+        <div className={cn('h-12 w-1 rounded-r-md ml-0', stripeColor)} aria-hidden />
 
-      <div className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-ink-700 font-bold text-[0.85rem]">
-        {initials}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="text-[0.92rem] font-semibold text-ink-900 truncate">
-          {nom}
+        <div className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-ink-700 font-bold text-[0.85rem]">
+          {initials}
         </div>
-        <div className="text-[0.7rem] text-ink-400">
-          {genre === 'F' ? '♀' : '♂'}
+
+        <div className="flex-1 min-w-0">
+          <div className="text-[0.92rem] font-semibold text-ink-900 truncate">
+            {nom}
+          </div>
+          <div className="text-[0.7rem] text-ink-400">
+            {genre === 'F' ? '♀' : '♂'}
+          </div>
+        </div>
+
+        {/* 3-state segmented control */}
+        <div
+          role="radiogroup"
+          aria-label={`État de présence pour ${nom}`}
+          className="flex gap-1 shrink-0"
+        >
+          <SegmentBtn
+            active={etat === 'present'}
+            color="success"
+            icon={<Check className="h-4 w-4" />}
+            ariaLabel="Présent"
+            onClick={() => onChange('present')}
+          />
+          <SegmentBtn
+            active={etat === 'retard'}
+            color="warning"
+            icon={<Clock className="h-4 w-4" />}
+            ariaLabel="Retard"
+            onClick={() => onChange('retard')}
+          />
+          <SegmentBtn
+            active={etat === 'absent'}
+            color="danger"
+            icon={<X className="h-4 w-4" />}
+            ariaLabel="Absent"
+            onClick={() => onChange('absent')}
+          />
         </div>
       </div>
 
-      {/* 3-state segmented control */}
-      <div
-        role="radiogroup"
-        aria-label={`État de présence pour ${nom}`}
-        className="flex gap-1 shrink-0"
-      >
-        <SegmentBtn
-          active={etat === 'present'}
-          color="success"
-          icon={<Check className="h-4 w-4" />}
-          ariaLabel="Présent"
-          onClick={() => onChange('present')}
-        />
-        <SegmentBtn
-          active={etat === 'retard'}
-          color="warning"
-          icon={<Clock className="h-4 w-4" />}
-          ariaLabel="Retard"
-          onClick={() => onChange('retard')}
-        />
-        <SegmentBtn
-          active={etat === 'absent'}
-          color="danger"
-          icon={<X className="h-4 w-4" />}
-          ariaLabel="Absent"
-          onClick={() => onChange('absent')}
-        />
-      </div>
+      {/* Raison input — only when marked absent */}
+      {etat === 'absent' && (
+        <div className="px-3 pb-3 -mt-1 flex items-stretch gap-2">
+          <input
+            type="text"
+            value={raison}
+            maxLength={40}
+            onChange={(e) => onRaisonChange(e.target.value)}
+            placeholder="Raison (optionnel · 40 car. max)"
+            aria-label={`Raison de l'absence pour ${nom}`}
+            className="flex-1 min-w-0 rounded-md border border-danger/30 bg-white/80 px-3 py-2 text-[0.85rem] text-ink-800 placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-danger/30 focus:border-danger/50"
+          />
+          {raison && (
+            <button
+              type="button"
+              onClick={() => onRaisonChange('')}
+              aria-label="Effacer la raison"
+              className="shrink-0 px-2 text-[0.78rem] font-semibold text-ink-500 hover:text-danger transition-colors !min-h-0 !min-w-0"
+            >
+              Effacer
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

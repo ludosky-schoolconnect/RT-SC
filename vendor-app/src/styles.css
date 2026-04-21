@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ensure html/body fill viewport for vertical centering */
+html,
+body,
+#root {
+  min-height: 100dvh;
+}
+
+/* Smooth scroll for anchor-like nav */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Form reset — inputs don't zoom on iOS Safari */
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+input,
+textarea,
+select {
+  font-size: 16px; /* prevents iOS zoom on focus */
+}
+
+/* Mono for Firebase config paste */
+.font-mono {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas,
+    'Liberation Mono', Menlo, monospace;
+}

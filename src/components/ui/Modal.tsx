@@ -25,87 +25,17 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { IconButton } from './IconButton'
+import {
+  dismissibleStack,
+  installGlobalListeners,
+  uninstallGlobalListeners,
+  type DismissibleEntry,
+} from './dismissibleStack'
 
-// ─── Module-level modal stack ───────────────────────────────
-//
-// Every OPEN Modal registers an entry here (LIFO). Only the topmost
-// entry responds to Escape or popstate. This prevents the classic
-// bug where a single back-button tap closes ALL stacked modals
-// simultaneously because each modal attached its own window listener.
-//
-// How it works:
-//   • One global popstate listener + one global keydown listener,
-//     installed on first entry, uninstalled when stack empties.
-//   • When browser fires popstate (back button, forward, etc.) we
-//     close the TOP modal only.
-//   • When Escape fires we close the TOP modal only.
-//   • Each modal's effect pushes on mount, pops on unmount.
-//
-// History state management:
-//   • Each open pushes one synthetic state (so back button has
-//     something to pop before reaching the real page).
-//   • We NEVER call history.back() ourselves (learned the hard way —
-//     combined with React StrictMode / React Router / third-party
-//     listeners it can compound into multi-step navigation).
-//   • If a modal closes via X/scrim/Escape, its synthetic state
-//     lingers harmlessly. The next back tap pops the orphan, which
-//     — if there are other modals still open — correctly closes the
-//     NEXT top modal via the global popstate handler. If no modals
-//     open, the tap is a silent no-op (user taps back again to
-//     actually navigate, at most ONE dead tap per flow).
-//
-interface StackEntry {
-  /** When true, onClose is invoked by global keydown/popstate */
-  respondToEscape: boolean
-  respondToBack: boolean
-  close: () => void
-  /** Millisecond timestamp when this modal opened (dead-zone gate) */
-  openedAt: number
-}
-const modalStack: StackEntry[] = []
-let globalListenersInstalled = false
-
-function installGlobalListeners() {
-  if (globalListenersInstalled) return
-  globalListenersInstalled = true
-
-  window.addEventListener('keydown', onGlobalKeyDown)
-  window.addEventListener('popstate', onGlobalPopState)
-}
-function uninstallGlobalListeners() {
-  if (!globalListenersInstalled) return
-  if (modalStack.length > 0) return // still modals open, keep listeners
-  globalListenersInstalled = false
-  window.removeEventListener('keydown', onGlobalKeyDown)
-  window.removeEventListener('popstate', onGlobalPopState)
-}
-
-function onGlobalKeyDown(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return
-  const top = modalStack[modalStack.length - 1]
-  if (!top || !top.respondToEscape) return
-  // Don't close while user is typing in an input inside the modal
-  const tag = (document.activeElement?.tagName ?? '').toLowerCase()
-  const editable =
-    tag === 'input' ||
-    tag === 'textarea' ||
-    tag === 'select' ||
-    (document.activeElement as HTMLElement | null)?.isContentEditable
-  if (editable) return
-  e.preventDefault()
-  top.close()
-}
-
-function onGlobalPopState() {
-  const top = modalStack[modalStack.length - 1]
-  if (!top || !top.respondToBack) return
-  // Dead-zone: ignore popstate within 400ms of opening. Covers stray
-  // Android events during layout transitions (soft keyboard, browser
-  // chrome show/hide, etc.) that could otherwise auto-close a freshly
-  // opened modal before the user interacts.
-  if (Date.now() - top.openedAt < 400) return
-  top.close()
-}
+// Modal shares the global dismissible stack with useDismissibleLayer
+// (dropdowns, bottom sheets). Only the topmost entry responds to
+// Escape / back button. See dismissibleStack.ts for the invariants
+// (400ms dead zone, no history.back() calls, etc.)
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
 
@@ -230,8 +160,8 @@ export function Modal({
     document.body.style.width = '100%'
 
     // Escape key handling is done by the global keydown listener
-    // installed on first modal open (see modalStack above). We just
-    // register this modal's close callback into the stack.
+    // installed on first modal/dismissible open (see dismissibleStack).
+    // We just register this modal's close callback into the stack.
 
     // Back-button handling: push ONE synthetic history entry so the
     // browser's back gesture has something to consume before reaching
@@ -242,15 +172,15 @@ export function Modal({
       pushedState = true
     }
 
-    // Register into the global modal stack. Only the topmost entry
-    // responds to Escape / back button.
-    const entry: StackEntry = {
+    // Register into the global dismissible stack. Only the topmost
+    // entry responds to Escape / back button.
+    const entry: DismissibleEntry = {
       respondToEscape: !disableEscCloseRef.current,
       respondToBack: trapBackButtonRef.current,
       openedAt: openedAtRef.current || Date.now(),
       close: () => onCloseRef.current(),
     }
-    modalStack.push(entry)
+    dismissibleStack.push(entry)
     installGlobalListeners()
 
     return () => {
@@ -263,10 +193,10 @@ export function Modal({
       document.body.style.width = originalBodyStyle.width
       window.scrollTo(0, originalScrollY)
 
-      // Pop this modal from the stack. Use indexOf in case the stack
+      // Pop this entry from the stack. Use indexOf in case the stack
       // drifted (nested modal closures / re-orders during dev hot-reload).
-      const idx = modalStack.indexOf(entry)
-      if (idx >= 0) modalStack.splice(idx, 1)
+      const idx = dismissibleStack.indexOf(entry)
+      if (idx >= 0) dismissibleStack.splice(idx, 1)
       uninstallGlobalListeners()
 
       // Deliberately do NOT call history.back() here. If the synthetic

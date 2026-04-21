@@ -36,6 +36,9 @@ import { Textarea } from '@/components/ui/Textarea'
 import {
   useDeclareAbsence,
   checkQuota,
+  checkOngoingClass,
+  hasVerrouToday,
+  type OngoingClass,
 } from '@/hooks/useEleveAbsencesMutations'
 import { useEleveAbsences } from '@/hooks/useEleveAbsences'
 import { useToast } from '@/stores/toast'
@@ -89,6 +92,46 @@ export function ModalDeclareAbsence({
   const [heureErr, setHeureErr] = useState<string | null>(null)
   const [raisonErr, setRaisonErr] = useState<string | null>(null)
   const [submitErr, setSubmitErr] = useState<string | null>(null)
+
+  // Server-side locks: verrouToday (prof marked absent via appel) +
+  // ongoing class (emploi du temps says élève is supposed to be in
+  // class right now). Both are refreshed while the modal is open:
+  // verrouToday on every open (cheap: one getDoc); ongoing-class every
+  // 60s so the form unlocks itself when class ends.
+  const [verrouToday, setVerrouToday] = useState<boolean | null>(null)
+  const [ongoing, setOngoing] = useState<OngoingClass | null>(null)
+
+  // verrou check — runs once per open
+  useEffect(() => {
+    if (!open || !classeId || !eleveId) return
+    let cancelled = false
+    hasVerrouToday(classeId, eleveId)
+      .then((v) => {
+        if (!cancelled) setVerrouToday(v)
+      })
+      .catch(() => {
+        if (!cancelled) setVerrouToday(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, classeId, eleveId])
+
+  // ongoing-class check — runs every 60s while modal is open
+  useEffect(() => {
+    if (!open || !classeId) return
+    let cancelled = false
+    async function tick() {
+      const res = await checkOngoingClass(classeId)
+      if (!cancelled) setOngoing(res)
+    }
+    tick()
+    const interval = setInterval(tick, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [open, classeId])
 
   // Reset whenever the modal re-opens
   useEffect(() => {
@@ -153,7 +196,23 @@ export function ModalDeclareAbsence({
     const { ok, payloadDate } = validate()
     if (!ok || !payloadDate) return
 
-    // Quota check
+    // Verrou check — prof already marked absent today
+    if (verrouToday) {
+      setSubmitErr(
+        "Un professeur vous a marqué absent(e) aujourd'hui. La déclaration en ligne est bloquée."
+      )
+      return
+    }
+
+    // Ongoing-class check — can't declare during class hours
+    if (ongoing) {
+      setSubmitErr(
+        `Un cours est en cours (${ongoing.matiere}) jusqu'à ${ongoing.heureFin}. Vous pourrez déclarer après.`
+      )
+      return
+    }
+
+    // Quota check (counts by createdAt, not by target date)
     const quotaErr = checkQuota(existing, payloadDate)
     if (quotaErr) {
       setSubmitErr(quotaErr)
@@ -181,11 +240,10 @@ export function ModalDeclareAbsence({
       onClose()
     } catch (err: unknown) {
       console.error('[ModalDeclareAbsence] error:', err)
-      // Firestore permission-denied = rule blocked the write (likely outside hours window)
       const msg = err instanceof Error ? err.message : String(err)
       if (msg.includes('PERMISSION_DENIED') || msg.includes('insufficient')) {
         setSubmitErr(
-          "Action refusée : les déclarations sont possibles uniquement entre 06h et 18h."
+          "Action refusée par les règles de sécurité. Contactez l'école si vous pensez qu'il s'agit d'une erreur."
         )
       } else {
         setSubmitErr(
@@ -211,6 +269,47 @@ export function ModalDeclareAbsence({
 
       <form onSubmit={submit} className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <ModalBody className="space-y-4">
+          {/* Lock banner — visible whenever a server-side guard is active.
+              Priority: verrou > ongoing class. These override user input;
+              showing the reason upfront is clearer than blocking on submit. */}
+          {verrouToday && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger-bg/50 px-3 py-3 text-[0.85rem] text-ink-800"
+            >
+              <AlertCircle className="h-4 w-4 text-danger shrink-0 mt-0.5" aria-hidden />
+              <div className="leading-snug">
+                <p className="font-semibold text-danger">
+                  Déclaration bloquée pour aujourd'hui
+                </p>
+                <p className="text-[0.8rem] mt-0.5">
+                  Un professeur vous a marqué absent(e) aujourd'hui lors de
+                  l'appel. Pour toute justification, présentez-vous à la
+                  direction.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!verrouToday && ongoing && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-3 text-[0.85rem] text-ink-800"
+            >
+              <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" aria-hidden />
+              <div className="leading-snug">
+                <p className="font-semibold text-warning-dark">
+                  Cours en cours — déclaration indisponible
+                </p>
+                <p className="text-[0.8rem] mt-0.5">
+                  {ongoing.matiere} est en cours jusqu'à{' '}
+                  <strong>{ongoing.heureFin}</strong>. La déclaration
+                  redeviendra disponible automatiquement après la fin du cours.
+                </p>
+              </div>
+            </div>
+          )}
+
           <Input
             type="date"
             label="Date d'absence"
@@ -291,6 +390,7 @@ export function ModalDeclareAbsence({
             type="submit"
             variant="primary"
             loading={declareMut.isPending}
+            disabled={!!verrouToday || !!ongoing || declareMut.isPending}
             leadingIcon={<Send className="h-4 w-4" />}
           >
             Déclarer

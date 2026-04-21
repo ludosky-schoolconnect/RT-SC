@@ -29,14 +29,17 @@ export default {
         success: {
           DEFAULT: '#1A7F4B',
           bg: '#EAF6F0',
+          dark: '#0F5C36',
         },
         warning: {
           DEFAULT: '#B45309',
           bg: '#FEF3C7',
+          dark: '#7C3A06',
         },
         danger: {
           DEFAULT: '#B91C1C',
           bg: '#FEE2E2',
+          dark: '#8B1414',
         },
         info: {
           DEFAULT: '#0B2545',

@@ -1,23 +1,25 @@
 /**
- * RT-SC · AbsencesEcoleView (admin triage).
+ * RT-SC · AbsencesEcoleView (admin triage — DECLARATIONS ONLY).
  *
- * Flat list of every declared absence in the school, sorted by date desc.
- * Replaces the legacy admin "absences globales" table with proper search,
- * filters, and one-tap Valider/Refuser/Supprimer actions per row.
+ * Flat list of every self-DECLARED absence (élève or parent) in the
+ * school. Appel-marked absences are a separate concept and live in
+ * the "Appels du jour" view (today) + "Archive" view (past).
  *
- * Two filter dimensions:
- *   - Search bar — élève name, classe label, raison
- *   - Statut tabs — Toutes / À traiter (en attente) / Validées / Refusées
+ * Splitting them matters because:
+ *   - Declarations are PROPOSALS admin reviews (validate/refuse/delete)
+ *   - Marked absences are FACTS admin monitors (no review, only delete)
+ *   - Mixing them confused the chip filters and cluttered the triage view
  *
- * Rows render as cards (mobile-friendly) with action buttons. Tapping
- * Valider/Refuser is a single Firestore write per click.
+ * Also: this view triggers the daily archive rollover (unchanged from
+ * 5d.6) — admin's first visit to any Vie scolaire surface triggers
+ * /presences/ cleanup.
  */
 
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   CalendarOff, Search, Hourglass, CheckCircle2, XCircle, Clock,
-  User, Trash2, FileText,
+  User, Trash2,
 } from 'lucide-react'
 
 import { Spinner } from '@/components/ui/Spinner'
@@ -37,9 +39,26 @@ import { useToast } from '@/stores/toast'
 import { useConfirm } from '@/stores/confirm'
 import { nomClasse } from '@/lib/benin'
 import { cn } from '@/lib/cn'
+import { cleanRaison, RAISON_PLACEHOLDER } from '@/lib/absences-display'
 import type { StatutAbsence } from '@/types/models'
 
-type StatutFilter = 'all' | 'pending' | 'validated' | 'refused'
+type Filter = 'pending' | 'today' | 'all' | 'validated' | 'refused'
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+function tsToDate(ts: unknown): Date {
+  if (!ts) return new Date(0)
+  if (ts instanceof Date) return ts
+  const t = ts as { toDate?: () => Date }
+  if (typeof t.toDate === 'function') return t.toDate()
+  return new Date(0)
+}
 
 export function AbsencesEcoleView() {
   const { data: absences = [], isLoading } = useSchoolAbsences()
@@ -52,22 +71,21 @@ export function AbsencesEcoleView() {
   }, [classes])
 
   const [searchQ, setSearchQ] = useState('')
-  const [filter, setFilter] = useState<StatutFilter>('pending')
+  const [filter, setFilter] = useState<Filter>('pending')
 
-  // Apply filters
   const filtered = useMemo(() => {
     const q = searchQ.trim().toLowerCase()
+    const today = new Date()
     return absences.filter((a) => {
-      // Statut filter
+      const aDate = tsToDate(a.date)
+      if (filter === 'today' && !isSameDay(aDate, today)) return false
       if (filter === 'pending' && a.statut !== 'en attente') return false
       if (filter === 'validated' && a.statut !== 'validée') return false
       if (filter === 'refused' && a.statut !== 'refusée') return false
-      // Search
       if (!q) return true
       const haystack = [
         a.eleveNom,
-        a.classeNom,
-        classeNomById.get(a.classeId) ?? '',
+        classeNomById.get(a.classeId) ?? a.classeNom ?? '',
         a.raison,
       ]
         .join(' ')
@@ -76,17 +94,20 @@ export function AbsencesEcoleView() {
     })
   }, [absences, filter, searchQ, classeNomById])
 
-  // Counters per statut (always computed off the unfiltered set)
+  // Counters per chip (computed on unfiltered set)
   const counts = useMemo(() => {
-    let pending = 0,
-      validated = 0,
-      refused = 0
+    const today = new Date()
+    let todayCount = 0
+    let pending = 0
+    let validated = 0
+    let refused = 0
     for (const a of absences) {
+      if (isSameDay(tsToDate(a.date), today)) todayCount++
       if (a.statut === 'en attente') pending++
       else if (a.statut === 'validée') validated++
       else if (a.statut === 'refusée') refused++
     }
-    return { pending, validated, refused, total: absences.length }
+    return { today: todayCount, pending, validated, refused, total: absences.length }
   }, [absences])
 
   if (isLoading && absences.length === 0) {
@@ -99,6 +120,14 @@ export function AbsencesEcoleView() {
 
   return (
     <div className="space-y-4">
+      {/* Helper line to reinforce the scope change */}
+      <div className="rounded-md bg-info-bg/40 border border-info/30 px-3 py-2 text-[0.78rem] text-ink-700">
+        Cette vue ne présente que les <strong>déclarations</strong> d'élèves et parents.
+        Pour les absences marquées par les profs, consultez{' '}
+        <span className="font-semibold">Appels du jour</span> ou{' '}
+        <span className="font-semibold">Archive</span>.
+      </div>
+
       {/* Filter chips */}
       <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
         <FilterChip
@@ -107,6 +136,13 @@ export function AbsencesEcoleView() {
           count={counts.pending}
           tone="warning"
           onClick={() => setFilter('pending')}
+        />
+        <FilterChip
+          active={filter === 'today'}
+          label="Aujourd'hui"
+          count={counts.today}
+          tone="navy"
+          onClick={() => setFilter('today')}
         />
         <FilterChip
           active={filter === 'all'}
@@ -135,7 +171,7 @@ export function AbsencesEcoleView() {
       {absences.length > 5 && (
         <Input
           type="search"
-          placeholder="Rechercher élève, classe ou motif…"
+          placeholder="Rechercher élève, classe, motif…"
           value={searchQ}
           onChange={(e) => setSearchQ(e.target.value)}
           leading={<Search className="h-4 w-4 text-ink-400" />}
@@ -148,17 +184,17 @@ export function AbsencesEcoleView() {
           icon={<CalendarOff className="h-10 w-10" />}
           title={
             filter === 'pending'
-              ? "Rien à traiter"
+              ? 'Rien à traiter'
               : searchQ
-                ? "Aucun résultat"
-                : "Aucune déclaration"
+                ? 'Aucun résultat'
+                : 'Aucune déclaration'
           }
           description={
             filter === 'pending'
-              ? "Toutes les déclarations ont été traitées."
+              ? 'Toutes les déclarations ont été traitées.'
               : searchQ
-                ? `Aucune absence ne correspond à « ${searchQ} ».`
-                : "Les déclarations apparaîtront ici dès qu'un élève ou parent en soumet une."
+                ? `Aucune déclaration ne correspond à « ${searchQ} ».`
+                : "Les déclarations d'élèves et parents apparaîtront ici."
           }
         />
       ) : (
@@ -176,9 +212,9 @@ export function AbsencesEcoleView() {
                 exit={{ opacity: 0, scale: 0.96 }}
                 layout
               >
-                <AbsenceTriageCard
+                <DeclaredCard
                   absence={a}
-                  classeNom={classeNomById.get(a.classeId) ?? a.classeNom}
+                  classeNom={classeNomById.get(a.classeId) ?? a.classeNom ?? '—'}
                 />
               </motion.div>
             ))}
@@ -189,7 +225,7 @@ export function AbsencesEcoleView() {
   )
 }
 
-// ─── Filter chip ──────────────────────────────────────────────
+// ─── FilterChip ───────────────────────────────────────────────
 
 function FilterChip({
   active,
@@ -201,16 +237,16 @@ function FilterChip({
   active: boolean
   label: string
   count: number
-  tone: 'warning' | 'neutral' | 'success' | 'danger'
+  tone: 'warning' | 'neutral' | 'success' | 'danger' | 'navy'
   onClick: () => void
 }) {
-  const activeTone = {
+  const activeTone: Record<string, string> = {
     warning: 'bg-warning text-white ring-warning',
-    neutral: 'bg-navy text-white ring-navy',
+    neutral: 'bg-ink-700 text-white ring-ink-700',
     success: 'bg-success text-white ring-success',
     danger: 'bg-danger text-white ring-danger',
-  }[tone]
-
+    navy: 'bg-navy text-white ring-navy',
+  }
   return (
     <button
       type="button"
@@ -218,7 +254,7 @@ function FilterChip({
       className={cn(
         'shrink-0 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[0.78rem] font-semibold ring-1 transition-all',
         active
-          ? activeTone + ' shadow-sm'
+          ? activeTone[tone] + ' shadow-sm'
           : 'bg-white text-ink-600 ring-ink-200 hover:bg-ink-50'
       )}
     >
@@ -235,9 +271,9 @@ function FilterChip({
   )
 }
 
-// ─── Triage card ──────────────────────────────────────────────
+// ─── DeclaredCard ─────────────────────────────────────────────
 
-function AbsenceTriageCard({
+function DeclaredCard({
   absence,
   classeNom,
 }: {
@@ -248,6 +284,8 @@ function AbsenceTriageCard({
   const deleteMut = useDeleteAbsence()
   const toast = useToast()
   const confirm = useConfirm()
+  const cleanedRaison = cleanRaison(absence.raison)
+  const date = tsToDate(absence.date)
 
   async function setStatut(statut: 'validée' | 'refusée') {
     try {
@@ -265,9 +303,12 @@ function AbsenceTriageCard({
   }
 
   async function remove() {
+    const what = cleanedRaison
+      ? `« ${cleanedRaison.slice(0, 80)}${cleanedRaison.length > 80 ? '…' : ''} »`
+      : `La déclaration de ${absence.eleveNom} (${formatDateFR(date)})`
     const ok = await confirm({
       title: 'Supprimer la déclaration ?',
-      message: `« ${absence.raison.slice(0, 80)}${absence.raison.length > 80 ? '…' : ''} » sera supprimée définitivement.`,
+      message: `${what} sera supprimée définitivement.`,
       confirmLabel: 'Supprimer',
       variant: 'danger',
     })
@@ -281,17 +322,10 @@ function AbsenceTriageCard({
       toast.success('Déclaration supprimée.')
     } catch (err) {
       console.error('[remove] error:', err)
-      toast.error('Échec de la suppression.')
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(`Échec de la suppression : ${msg}`)
     }
   }
-
-  const dateStr = formatLongDate(absence.date)
-  const sourceLabel =
-    absence.source === 'parent'
-      ? 'Parent'
-      : absence.source === 'appel_prof'
-        ? 'Prof'
-        : 'Élève'
 
   return (
     <article
@@ -302,11 +336,11 @@ function AbsenceTriageCard({
           : 'border-ink-100'
       )}
     >
-      {/* Header */}
       <div className="flex items-start gap-3">
         <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-full bg-ink-100 text-ink-700 font-bold text-[0.85rem]">
           {absence.eleveNom.charAt(0).toUpperCase()}
         </div>
+
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2 flex-wrap">
             <div className="min-w-0">
@@ -322,7 +356,7 @@ function AbsenceTriageCard({
 
           <div className="mt-2 flex items-center gap-2 text-[0.72rem] text-ink-500 flex-wrap">
             <span className="inline-flex items-center gap-1 font-semibold text-ink-700">
-              {dateStr}
+              {formatDateFR(date)}
             </span>
             {(absence.heureDebut || absence.heureFin) && (
               <span className="inline-flex items-center gap-1">
@@ -334,17 +368,20 @@ function AbsenceTriageCard({
             )}
             <span className="inline-flex items-center gap-1">
               <User className="h-3 w-3" aria-hidden />
-              {sourceLabel}
+              {absence.source === 'parent' ? 'Parent' : 'Élève'}
             </span>
           </div>
 
-          {absence.raison && (
+          {cleanedRaison ? (
             <p className="mt-2 text-[0.85rem] text-ink-700 whitespace-pre-wrap break-words">
-              {absence.raison}
+              {cleanedRaison}
+            </p>
+          ) : (
+            <p className="mt-2 text-[0.78rem] text-ink-400 italic">
+              {RAISON_PLACEHOLDER}
             </p>
           )}
 
-          {/* Actions */}
           <div className="mt-3 flex items-center gap-2 flex-wrap">
             {absence.statut === 'en attente' && (
               <>
@@ -368,20 +405,9 @@ function AbsenceTriageCard({
                 </Button>
               </>
             )}
-            {absence.statut !== 'en attente' && (
-              <button
-                type="button"
-                onClick={() => setStatut('en attente' as never)}
-                className="text-[0.72rem] text-ink-400 hover:text-navy underline transition-colors !min-h-0"
-                disabled
-                title="Réinitialisation manuelle non supportée"
-              >
-                {/* placeholder for potential 'reset' action */}
-              </button>
-            )}
             <IconButton
               variant="danger"
-              aria-label="Supprimer la déclaration"
+              aria-label="Supprimer"
               onClick={remove}
               disabled={deleteMut.isPending}
               className="ml-auto"
@@ -395,7 +421,7 @@ function AbsenceTriageCard({
   )
 }
 
-// ─── Statut badge ──────────────────────────────────────────────
+// ─── StatutBadge ───────────────────────────────────────────────
 
 function StatutBadge({ statut }: { statut: StatutAbsence }) {
   if (statut === 'validée') {
@@ -419,17 +445,8 @@ function StatutBadge({ statut }: { statut: StatutAbsence }) {
   )
 }
 
-// ─── Date helper ──────────────────────────────────────────────
-
-function formatLongDate(ts: { toDate?: () => Date } | Date | undefined): string {
-  if (!ts) return '—'
+function formatDateFR(d: Date): string {
   try {
-    const d =
-      ts instanceof Date
-        ? ts
-        : typeof ts.toDate === 'function'
-          ? ts.toDate()
-          : new Date(ts as unknown as string)
     return new Intl.DateTimeFormat('fr-FR', {
       weekday: 'short',
       day: 'numeric',
@@ -438,6 +455,6 @@ function formatLongDate(ts: { toDate?: () => Date } | Date | undefined): string 
       .format(d)
       .replace(/^./, (c) => c.toUpperCase())
   } catch {
-    return '—'
+    return d.toString()
   }
 }

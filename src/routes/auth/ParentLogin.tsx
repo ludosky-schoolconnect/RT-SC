@@ -236,7 +236,7 @@ export default function ParentLogin() {
           <div className="pt-3 border-t border-ink-100 text-center">
             <p className="inline-flex items-center gap-1.5 text-[0.78rem] text-ink-500">
               <Heart className="h-3.5 w-3.5 text-gold-dark" aria-hidden />
-              Suivez la scolarité de votre enfant en toute simplicité.
+              Suivez le parcours de votre enfant en toute simplicité.
             </p>
           </div>
         )}

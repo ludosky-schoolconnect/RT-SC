@@ -34,7 +34,7 @@ import {
   query,
 } from 'firebase/firestore'
 import { db } from '@/firebase'
-import { absenceDoc } from '@/lib/firestore-keys'
+import { absenceDoc, parseLiveElevePath } from '@/lib/firestore-keys'
 import type { Absence } from '@/types/models'
 
 const FIVE_MIN = 5 * 60_000
@@ -45,23 +45,27 @@ export interface SchoolAbsence extends Absence {
   eleveId: string
 }
 
-/** Parse "classes/{cId}/eleves/{eId}/absences/{aId}" into { classeId, eleveId }. */
-function parseAbsencePath(path: string): { classeId: string; eleveId: string } {
-  const parts = path.split('/')
-  // Expected: ['classes', cId, 'eleves', eId, 'absences', aId]
-  return {
-    classeId: parts[1] ?? '',
-    eleveId: parts[3] ?? '',
-  }
-}
+/**
+ * Path-shape filter delegated to the shared `parseLiveElevePath` helper
+ * in firestore-keys (returns null for archive paths, etc.) — see that
+ * function for the canonical live-vs-archive distinction.
+ */
 
 /**
  * Session-scoped set of absence IDs we've already attempted to delete.
  * Prevents re-firing delete writes for the same stale doc on every snap
  * batch (Firestore often delivers multiple snaps in quick succession
  * during initial load).
+ *
+ * Plus: a session-wide flag so auto-cleanup runs AT MOST ONCE per page
+ * load, deferred to after initial render. Firing deletes inside the
+ * snapshot callback races against admin's manual delete clicks and
+ * triggers Firestore's persistent-cache layer to throw "INTERNAL
+ * ASSERTION FAILED: Unexpected state". Once-per-session + deferred +
+ * serialized eliminates the collision window.
  */
 const cleanupAttempted = new Set<string>()
+let cleanupRanThisSession = false
 
 function tsToMillis(ts: unknown): number {
   if (!ts) return 0
@@ -83,23 +87,26 @@ export function useSchoolAbsences() {
       (snap) => {
         const cutoff = Date.now() - FOURTEEN_DAYS_MS
         const fresh: SchoolAbsence[] = []
+        const stalePaths: Array<{ classeId: string; eleveId: string; id: string }> = []
 
         snap.docs.forEach((d) => {
-          const { classeId, eleveId } = parseAbsencePath(d.ref.path)
+          const parsed = parseLiveElevePath(d.ref.path, 'absences')
+          // Skip archive paths — they surface via the Année tab's
+          // dedicated archive browser, not the live triage view.
+          if (!parsed) return
+          const { classeId, eleveId } = parsed
           const data = d.data() as Omit<Absence, 'id'>
 
-          // 14-day cleanup — fire-and-forget delete for stale docs
+          // 14-day cleanup — collect stale doc paths but DON'T fire
+          // delete writes inside the snapshot callback. Firing deletes
+          // here races with admin's manual delete clicks and triggers
+          // Firestore's persistent-cache assertion. We batch them up
+          // and run once, deferred, below.
           const refMillis =
             tsToMillis(data.createdAt) || tsToMillis(data.date)
           if (refMillis && refMillis < cutoff) {
             if (!cleanupAttempted.has(d.id)) {
-              cleanupAttempted.add(d.id)
-              deleteDoc(doc(db, absenceDoc(classeId, eleveId, d.id))).catch(
-                (err) => {
-                  // Don't block the UI on permission errors etc.
-                  console.warn('[useSchoolAbsences] cleanup skipped:', err)
-                }
-              )
+              stalePaths.push({ classeId, eleveId, id: d.id })
             }
             return // exclude stale docs from the rendered list
           }
@@ -113,6 +120,28 @@ export function useSchoolAbsences() {
         })
 
         qc.setQueryData(key, fresh)
+
+        // Deferred, once-per-session, serialized cleanup. Only the FIRST
+        // snap that detects stale docs triggers the cleanup pass.
+        if (!cleanupRanThisSession && stalePaths.length > 0) {
+          cleanupRanThisSession = true
+          // Long delay: UI has time to paint and any user click-then-
+          // delete will have completed before background cleanup starts.
+          setTimeout(() => {
+            // Serial (await each before next) so the persistent cache
+            // layer never sees concurrent writes to adjacent docs.
+            void (async () => {
+              for (const { classeId, eleveId, id } of stalePaths) {
+                cleanupAttempted.add(id)
+                try {
+                  await deleteDoc(doc(db, absenceDoc(classeId, eleveId, id)))
+                } catch (err) {
+                  console.warn('[useSchoolAbsences] cleanup skipped:', err)
+                }
+              }
+            })()
+          }, 5000)
+        }
       },
       (err) => console.error('[useSchoolAbsences] snapshot error:', err)
     )

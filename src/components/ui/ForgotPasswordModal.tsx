@@ -55,7 +55,17 @@ export function ForgotPasswordModal({
     setSubmitting(true)
     try {
       await sendPasswordResetEmail(auth, cleaned)
-      toast.success(`Email envoyé à ${cleaned}. Vérifiez votre boîte de réception.`)
+      // IMPORTANT: Firebase does NOT send an email if the address is
+      // not linked to any existing account, but it also does not
+      // reveal this (to prevent email enumeration attacks). So we
+      // cannot say definitively "email sent" — we can only say a
+      // link was REQUESTED for that address. The user must check
+      // that they typed their signup email correctly if nothing
+      // arrives.
+      toast.success(
+        `Si ${cleaned} est lié à un compte, un email vous a été envoyé. Vérifiez aussi vos spams.`,
+        8000
+      )
       handleClose()
     } catch (err) {
       // Firebase intentionally returns success even when email doesn't exist
@@ -85,7 +95,7 @@ export function ForgotPasswordModal({
       <ModalBody>
         <form onSubmit={submit} className="space-y-3">
           <Input
-            label="Email du compte"
+            label="Email d'inscription"
             type="email"
             placeholder="vous@exemple.bj"
             value={email}
@@ -96,13 +106,16 @@ export function ForgotPasswordModal({
             autoComplete="email"
             autoCapitalize="off"
             leading={<Mail className="h-4 w-4" />}
+            hint="Tapez l'adresse email exacte avec laquelle vous avez créé votre compte."
             error={error ?? undefined}
             autoFocus
           />
           <p className="text-[0.78rem] text-ink-400 leading-relaxed">
-            Vous recevrez un lien sécurisé pour définir un nouveau mot de passe.
-            Vérifiez aussi votre dossier <strong>Spam</strong> si l'email n'arrive
-            pas dans la minute.
+            <strong>Important :</strong> le lien sera envoyé uniquement si
+            l'email correspond à un compte existant. Si vous ne recevez
+            rien dans la minute, vérifiez votre dossier <strong>Spam</strong>,
+            puis assurez-vous d'avoir saisi la même adresse que lors de
+            votre inscription.
           </p>
         </form>
       </ModalBody>

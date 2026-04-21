@@ -10,7 +10,7 @@
  */
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, Mail, Hourglass } from 'lucide-react'
+import { Check, X, Mail, Hourglass, GraduationCap, Wallet } from 'lucide-react'
 import type { Professeur } from '@/types/models'
 import { Badge } from '@/components/ui/Badge'
 import { IconButton } from '@/components/ui/IconButton'
@@ -32,10 +32,13 @@ export function PendingProfsList({ pending }: PendingProfsListProps) {
   if (pending.length === 0) return null
 
   async function approve(p: Professeur) {
+    // Role-aware approval copy so admin knows what they're granting.
+    const isCaisse = p.role === 'caissier'
     const ok = await confirm({
-      title: `Approuver ${p.nom} ?`,
-      message:
-        "Le professeur aura immédiatement accès à son tableau de bord et pourra voir ses classes assignées.",
+      title: `Approuver ${p.nom} (${isCaisse ? 'caissier' : 'professeur'}) ?`,
+      message: isCaisse
+        ? "Le caissier aura immédiatement accès au terminal de caisse, au bilan et au guichet d'admission."
+        : "Le professeur aura immédiatement accès à son tableau de bord et pourra voir ses classes assignées.",
       confirmLabel: 'Approuver',
       variant: 'info',
     })
@@ -83,63 +86,92 @@ export function PendingProfsList({ pending }: PendingProfsListProps) {
 
       <ul className="divide-y divide-warning/15">
         <AnimatePresence initial={false}>
-          {pending.map((p) => (
-            <motion.li
-              key={p.id}
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, x: 24 }}
-              transition={{ duration: 0.2 }}
-              className="flex items-center gap-3 px-4 py-3 bg-white"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-info-bg text-navy font-display font-bold text-sm">
-                {p.nom.charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-navy truncate">{p.nom}</p>
-                <p className="flex items-center gap-1 text-[0.78rem] text-ink-600 mt-0.5 truncate">
-                  <Mail className="h-3 w-3 shrink-0" aria-hidden />
-                  <span className="truncate">{p.email}</span>
-                </p>
-                {p.matieres?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {p.matieres.slice(0, 4).map((m) => (
-                      <Badge key={m} variant="neutral" size="sm">
-                        {m}
-                      </Badge>
-                    ))}
-                    {p.matieres.length > 4 && (
-                      <Badge variant="neutral" size="sm">
-                        +{p.matieres.length - 4}
-                      </Badge>
-                    )}
+          {pending.map((p) => {
+            const isCaisse = p.role === 'caissier'
+            return (
+              <motion.li
+                key={p.id}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, x: 24 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center gap-3 px-4 py-3 bg-white"
+              >
+                {/* Avatar tinted by role — navy bg for caissier, info
+                    bg for prof. Cheap visual-scan affordance. */}
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-display font-bold text-sm ${
+                    isCaisse
+                      ? 'bg-navy text-gold'
+                      : 'bg-info-bg text-navy'
+                  }`}
+                >
+                  {p.nom.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="font-semibold text-navy truncate">{p.nom}</p>
+                    {/* Role pill */}
+                    <Badge
+                      variant={isCaisse ? 'navy' : 'neutral'}
+                      size="sm"
+                      leadingIcon={
+                        isCaisse ? (
+                          <Wallet className="h-3 w-3" />
+                        ) : (
+                          <GraduationCap className="h-3 w-3" />
+                        )
+                      }
+                    >
+                      {isCaisse ? 'Caissier' : 'Professeur'}
+                    </Badge>
                   </div>
-                )}
-                {p.createdAt && (
-                  <p className="text-[0.7rem] text-ink-400 mt-1">
-                    Demandé le {formatDateShort(p.createdAt)}
+                  <p className="flex items-center gap-1 text-[0.78rem] text-ink-600 mt-0.5 truncate">
+                    <Mail className="h-3 w-3 shrink-0" aria-hidden />
+                    <span className="truncate">{p.email}</span>
                   </p>
-                )}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <IconButton
-                  aria-label={`Approuver ${p.nom}`}
-                  variant="ghost"
-                  onClick={() => approve(p)}
-                  className="text-success hover:bg-success-bg hover:text-success"
-                >
-                  <Check className="h-5 w-5" aria-hidden />
-                </IconButton>
-                <IconButton
-                  aria-label={`Rejeter ${p.nom}`}
-                  variant="danger"
-                  onClick={() => reject(p)}
-                >
-                  <X className="h-5 w-5" aria-hidden />
-                </IconButton>
-              </div>
-            </motion.li>
-          ))}
+                  {/* Matières only shown for prof role — caissier
+                      has no matières to display */}
+                  {!isCaisse && p.matieres?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {p.matieres.slice(0, 4).map((m) => (
+                        <Badge key={m} variant="neutral" size="sm">
+                          {m}
+                        </Badge>
+                      ))}
+                      {p.matieres.length > 4 && (
+                        <Badge variant="neutral" size="sm">
+                          +{p.matieres.length - 4}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                  {p.createdAt && (
+                    <p className="text-[0.7rem] text-ink-400 mt-1">
+                      Demandé le {formatDateShort(p.createdAt)}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <IconButton
+                    aria-label={`Approuver ${p.nom}`}
+                    variant="ghost"
+                    onClick={() => approve(p)}
+                    className="text-success hover:bg-success-bg hover:text-success"
+                  >
+                    <Check className="h-5 w-5" aria-hidden />
+                  </IconButton>
+                  <IconButton
+                    aria-label={`Rejeter ${p.nom}`}
+                    variant="danger"
+                    onClick={() => reject(p)}
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </IconButton>
+                </div>
+              </motion.li>
+            )
+          })}
         </AnimatePresence>
       </ul>
     </section>

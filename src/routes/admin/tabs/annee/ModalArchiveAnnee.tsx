@@ -62,6 +62,12 @@ export function ModalArchiveAnnee({ open, onClose }: ModalArchiveAnneeProps) {
   const [progress, setProgress] = useState({ stepName: '', done: 0, total: 0 })
   const [result, setResult] = useState<ArchiveYearResult | null>(null)
   const [fatalError, setFatalError] = useState<string | null>(null)
+  // Snapshot of newAnnee captured at execute time. Without this, the
+  // Done step's "Nouvelle année active" drifts because config.anneeActive
+  // updates mid-flow (step 4 writes it) and the onSnapshot re-fires,
+  // pushing newAnnee forward by one more year. Same class of display
+  // bug as the Transition modal's "N sur X" mismatch.
+  const [newAnneeSnapshot, setNewAnneeSnapshot] = useState('')
 
   const annee = config?.anneeActive ?? ''
   const newAnnee = useMemo(() => {
@@ -80,6 +86,7 @@ export function ModalArchiveAnnee({ open, onClose }: ModalArchiveAnneeProps) {
       setProgress({ stepName: '', done: 0, total: 0 })
       setResult(null)
       setFatalError(null)
+      setNewAnneeSnapshot('')
     }
   }, [open])
 
@@ -89,6 +96,7 @@ export function ModalArchiveAnnee({ open, onClose }: ModalArchiveAnneeProps) {
   async function execute() {
     if (!canExecute) return
     setStep('execute')
+    setNewAnneeSnapshot(newAnnee)
     try {
       const res = await executeFinalArchive({
         annee,
@@ -127,7 +135,7 @@ export function ModalArchiveAnnee({ open, onClose }: ModalArchiveAnneeProps) {
       case 'execute':
         return <ExecuteStep progress={progress} />
       case 'done':
-        return <DoneStep result={result} fatalError={fatalError} newAnnee={newAnnee} />
+        return <DoneStep result={result} fatalError={fatalError} newAnnee={newAnneeSnapshot} />
     }
   }
 

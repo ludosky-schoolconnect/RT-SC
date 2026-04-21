@@ -31,6 +31,7 @@ import { IconButton } from '@/components/ui/IconButton'
 
 import { useEleves } from '@/hooks/useEleves'
 import { useEleveAbsences } from '@/hooks/useEleveAbsences'
+import { cleanRaison, RAISON_PLACEHOLDER } from '@/lib/absences-display'
 import {
   useClasseMarkedRollup,
   useEleveAbsencesUnified,
@@ -320,7 +321,8 @@ function UnifiedAbsenceCard({
       toast.success('Déclaration supprimée.')
     } catch (err) {
       console.error('[delete] error:', err)
-      toast.error('Échec de la suppression.')
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(`Échec de la suppression : ${msg}`)
     }
   }
 
@@ -389,16 +391,31 @@ function UnifiedAbsenceCard({
             )}
           </div>
 
-          {entry.kind === 'declared' && entry.raison && (
-            <p className="mt-2 text-[0.82rem] text-ink-700 whitespace-pre-wrap break-words">
-              {entry.raison}
-            </p>
-          )}
-          {isMarked && entry.raison && (
-            <p className="mt-2 text-[0.82rem] text-ink-700 italic">
-              Note : {entry.raison}
-            </p>
-          )}
+          {entry.kind === 'declared' && (() => {
+            const r = cleanRaison(entry.raison)
+            return r ? (
+              <p className="mt-2 text-[0.82rem] text-ink-700 whitespace-pre-wrap break-words">
+                <span className="font-semibold text-ink-500 mr-1">Raison :</span>
+                {r}
+              </p>
+            ) : (
+              <p className="mt-2 text-[0.78rem] text-ink-400 italic">
+                {RAISON_PLACEHOLDER}
+              </p>
+            )
+          })()}
+          {isMarked && (() => {
+            const r = cleanRaison(entry.raison)
+            return r ? (
+              <p className="mt-2 text-[0.82rem] text-ink-700 italic">
+                Note du prof : {r}
+              </p>
+            ) : (
+              <p className="mt-2 text-[0.78rem] text-ink-400 italic">
+                Note du prof : raison d'absence inconnue
+              </p>
+            )
+          })()}
 
           {/* Admin actions — declared only */}
           {canManage && entry.kind === 'declared' && (

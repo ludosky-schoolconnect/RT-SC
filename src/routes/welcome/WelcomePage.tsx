@@ -221,11 +221,11 @@ export default function WelcomePage() {
         >
           {[
             <RoleCard
-              key="prof"
-              to="/auth/prof"
+              key="personnel"
+              to="/auth/personnel"
               icon={<BookOpen className="h-full w-full" />}
-              title="Professeur"
-              description="Gérer les notes, l'appel et les annonces de mes classes."
+              title="Personnel de l'école"
+              description="Professeurs et caissiers : accéder à mon espace."
             />,
             <RoleCard
               key="eleve"

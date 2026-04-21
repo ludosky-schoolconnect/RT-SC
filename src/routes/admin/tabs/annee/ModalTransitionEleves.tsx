@@ -84,6 +84,10 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
   const [destinations, setDestinations] = useState<Record<string, string>>({})
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [result, setResult] = useState<TransitionResult | null>(null)
+  // Snapshot of total attempted — captured at execute time so the Done
+  // step's "X sur Y" stays accurate even after onSnapshot shrinks
+  // pendingEleves (admis élèves vanish from source once moved).
+  const [totalAttempted, setTotalAttempted] = useState(0)
 
   const { data: eleves = [], isLoading: elevesLoading } = useEleves(
     sourceClasseId || undefined
@@ -109,6 +113,7 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
       setDestinations({})
       setProgress({ done: 0, total: 0 })
       setResult(null)
+      setTotalAttempted(0)
     }
   }, [open])
 
@@ -202,13 +207,25 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
     if (!sourceClasseId || !config?.anneeActive) return
     setStep('execute')
     setProgress({ done: 0, total: counts.total })
+    setTotalAttempted(counts.total)
 
-    const decisionsList: TransitionDecision[] = pendingEleves.map((e) => ({
-      eleveId: e.id,
-      statut: decisions[e.id] ?? 'echoue',
-      destClasseId:
-        decisions[e.id] === 'admis' ? destinations[e.id] : undefined,
-    }))
+    // Terminale "admis" (= diplômés) have no destination class — they
+    // leave the school. Route them to 'abandonne' so the rollover
+    // archives their record and removes them from the active roster.
+    // This preserves their data in the year archive for transcript
+    // issuance later.
+    const isTerminaleSource = sourceClasse?.niveau === 'Terminale'
+
+    const decisionsList: TransitionDecision[] = pendingEleves.map((e) => {
+      const raw = decisions[e.id] ?? 'echoue'
+      const effective: TransitionStatut =
+        isTerminaleSource && raw === 'admis' ? 'abandonne' : raw
+      return {
+        eleveId: e.id,
+        statut: effective,
+        destClasseId: effective === 'admis' ? destinations[e.id] : undefined,
+      }
+    })
 
     try {
       const res = await executeTransition({
@@ -291,7 +308,7 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
       case 'execute':
         return <StepExecute progress={progress} />
       case 'done':
-        return <StepDone result={result} counts={counts} />
+        return <StepDone result={result} totalAttempted={totalAttempted} />
     }
   }
 
@@ -317,7 +334,11 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
               Retour
             </Button>
             <Button
-              onClick={() => setStep(counts.admis > 0 ? 'destinations' : 'review')}
+              onClick={() => {
+                // Terminale admis = diplômés → no destinations step
+                const needsDestinations = counts.admis > 0 && sourceClasse?.niveau !== 'Terminale'
+                setStep(needsDestinations ? 'destinations' : 'review')
+              }}
               disabled={pendingEleves.length === 0}
               trailingIcon={<ArrowRight className="h-4 w-4" />}
             >
@@ -345,7 +366,10 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
           <>
             <Button
               variant="secondary"
-              onClick={() => setStep(counts.admis > 0 ? 'destinations' : 'classify')}
+              onClick={() => {
+                const needsDestinations = counts.admis > 0 && sourceClasse?.niveau !== 'Terminale'
+                setStep(needsDestinations ? 'destinations' : 'classify')
+              }}
               leadingIcon={<ArrowLeft className="h-4 w-4" />}
             >
               Retour
@@ -509,6 +533,17 @@ function StepClassify({
     (e) => e.statutAnnuel === 'Admis' || e.statutAnnuel === 'Échoué'
   ).length
 
+  // Terminale is a terminal niveau — "Admis" means the élève obtained
+  // their BAC and is leaving for higher education or the workforce,
+  // not being promoted to a next niveau. We relabel the UI but keep
+  // the underlying statut = 'admis' so the rollover logic is unchanged.
+  //
+  // IMPORTANT: in destinations step, terminale admis must NOT pick a
+  // destination class — they're leaving the school. We route them to
+  // a synthetic "diplômé → archive" path (see routeTerminaleAdmis
+  // below) that behaves like abandonné under the hood.
+  const isTerminale = sourceClasse?.niveau === 'Terminale'
+
   return (
     <div className="space-y-4">
       {/* Annual prefill banner */}
@@ -524,9 +559,21 @@ function StepClassify({
         </div>
       )}
 
+      {/* Terminale banner */}
+      {isTerminale && (
+        <div className="rounded-md bg-navy/5 border border-navy/20 px-3 py-2 flex items-start gap-2">
+          <Award className="h-4 w-4 text-navy shrink-0 mt-0.5" aria-hidden />
+          <p className="text-[0.8125rem] text-navy leading-snug">
+            Classe Terminale : <strong>Diplômé</strong> (ex-Admis) archive
+            l'élève avec son dossier. <strong>Échoué</strong> redouble en
+            Terminale. Aucune destination à choisir pour les diplômés.
+          </p>
+        </div>
+      )}
+
       {/* Counts strip */}
       <div className="grid grid-cols-3 gap-2 text-center">
-        <CountTile color="success" label="Admis" count={counts.admis} icon={<Award className="h-4 w-4" />} />
+        <CountTile color="success" label={isTerminale ? 'Diplômés' : 'Admis'} count={counts.admis} icon={<Award className="h-4 w-4" />} />
         <CountTile color="warning" label="Échoués" count={counts.echoue} icon={<TrendingDown className="h-4 w-4" />} />
         <CountTile color="danger" label="Abandonnés" count={counts.abandonne} icon={<UserMinus className="h-4 w-4" />} />
       </div>
@@ -535,7 +582,7 @@ function StepClassify({
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[0.78rem] font-semibold text-ink-400 uppercase tracking-wider">Tout marquer :</span>
         <button type="button" onClick={() => onBulk('admis')} className="text-[0.78rem] text-success font-semibold hover:underline">
-          Admis
+          {isTerminale ? 'Diplômé' : 'Admis'}
         </button>
         <span className="text-ink-300">·</span>
         <button type="button" onClick={() => onBulk('echoue')} className="text-[0.78rem] text-warning font-semibold hover:underline">
@@ -559,7 +606,14 @@ function StepClassify({
                 </Badge>
               </div>
               <div className="flex gap-1 ml-10">
-                <StatutBtn current={statut} value="admis" onClick={() => onSetStatut(e.id, 'admis')} label="Admis" color="success" icon={<Award className="h-3 w-3" />} />
+                <StatutBtn
+                  current={statut}
+                  value="admis"
+                  onClick={() => onSetStatut(e.id, 'admis')}
+                  label={isTerminale ? 'Diplômé' : 'Admis'}
+                  color="success"
+                  icon={<Award className="h-3 w-3" />}
+                />
                 <StatutBtn current={statut} value="echoue" onClick={() => onSetStatut(e.id, 'echoue')} label="Échoué" color="warning" icon={<TrendingDown className="h-3 w-3" />} />
                 <StatutBtn current={statut} value="abandonne" onClick={() => onSetStatut(e.id, 'abandonne')} label="Abandonné" color="danger" icon={<UserMinus className="h-3 w-3" />} />
               </div>
@@ -707,8 +761,13 @@ function StepReview({
   destinations: Record<string, string>
   eleves: Eleve[]
 }) {
-  // Group admis by destination class
+  const isTerminale = sourceClasse?.niveau === 'Terminale'
+
+  // Group admis by destination class (non-Terminale only — Terminale
+  // admis don't have destinations, they're routed to archive at
+  // execute time).
   const admisByDest = useMemo(() => {
+    if (isTerminale) return []
     const m = new Map<string, number>()
     for (const e of eleves) {
       if (decisions[e.id] === 'admis') {
@@ -720,7 +779,7 @@ function StepReview({
       classe: classes.find((c) => c.id === cid),
       count,
     }))
-  }, [eleves, decisions, destinations, classes])
+  }, [eleves, decisions, destinations, classes, isTerminale])
 
   return (
     <div className="space-y-4">
@@ -731,8 +790,9 @@ function StepReview({
             Action partiellement irréversible
           </p>
           <p className="text-[0.8125rem] text-warning/90 mt-0.5 leading-snug">
-            Les abandons sont archivés et supprimés des rosters actifs immédiatement.
-            Les admis sont déplacés vers leur nouvelle classe.
+            {isTerminale
+              ? "Les diplômés sont archivés et retirés des effectifs actifs. Leurs dossiers resteront consultables dans les archives annuelles. Les abandons sont également archivés et supprimés."
+              : "Les abandons sont archivés et supprimés des rosters actifs immédiatement. Les admis sont déplacés vers leur nouvelle classe."}
           </p>
         </div>
       </div>
@@ -740,13 +800,17 @@ function StepReview({
       <div className="rounded-lg border border-ink-100 bg-white divide-y divide-ink-100">
         <ReviewRow
           icon={<Award className="h-4 w-4 text-success" />}
-          label={`${counts.admis} admis`}
+          label={`${counts.admis} ${isTerminale ? 'diplômé' : 'admis'}${counts.admis > 1 ? 's' : ''}`}
           detail={
-            admisByDest.length > 0
-              ? admisByDest
-                  .map((d) => `${d.count} → ${d.classe ? nomClasse(d.classe) : '?'}`)
-                  .join(', ')
-              : 'Aucun'
+            isTerminale
+              ? counts.admis > 0
+                ? `Archivé${counts.admis > 1 ? 's' : ''} dans les archives de l'année`
+                : 'Aucun'
+              : admisByDest.length > 0
+                ? admisByDest
+                    .map((d) => `${d.count} → ${d.classe ? nomClasse(d.classe) : '?'}`)
+                    .join(', ')
+                : 'Aucun'
           }
         />
         <ReviewRow
@@ -814,10 +878,10 @@ function StepExecute({ progress }: { progress: { done: number; total: number } }
 
 function StepDone({
   result,
-  counts,
+  totalAttempted,
 }: {
   result: TransitionResult | null
-  counts: { admis: number; echoue: number; abandonne: number; total: number }
+  totalAttempted: number
 }) {
   const ok = (result?.errors.length ?? 0) === 0
   return (
@@ -833,7 +897,7 @@ function StepDone({
       <p className="text-[0.875rem] text-ink-600 mt-2">
         <strong className="text-success">{result?.successCount ?? 0}</strong> élève
         {(result?.successCount ?? 0) > 1 ? 's' : ''} traité
-        {(result?.successCount ?? 0) > 1 ? 's' : ''} sur {counts.total}
+        {(result?.successCount ?? 0) > 1 ? 's' : ''} sur {totalAttempted}
       </p>
       {result && result.errors.length > 0 && (
         <div className="mt-4 rounded-md bg-danger-bg border border-danger/20 p-3 text-left">

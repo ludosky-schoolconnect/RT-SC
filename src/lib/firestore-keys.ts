@@ -82,6 +82,14 @@ export const presenceDoc = (classeId: string, dateISO: string) =>
   `classes/${classeId}/presences/${dateISO}`
 
 // ─────────────────────────────────────────────────────────────
+// Archived appel-marked absences (flat top-level collection)
+// One doc per (élève × matière × date) snapshot.
+// ─────────────────────────────────────────────────────────────
+
+export const archivedAbsencesCol = () => 'archived_absences'
+export const archivedAbsenceDoc = (id: string) => `archived_absences/${id}`
+
+// ─────────────────────────────────────────────────────────────
 // Emplois du temps (flat collection; doc carries classeId/profId)
 // ─────────────────────────────────────────────────────────────
 
@@ -132,7 +140,23 @@ export const vigilanceDoc = (eleveId: string, matiere: string) =>
 export const preInscriptionsCol = () => 'pre_inscriptions'
 export const preInscriptionDoc = (id: string) => `pre_inscriptions/${id}`
 
+/**
+ * Per-doc storage subcollection. One doc per uploaded file —
+ * keeps the parent inscription light + lets admin lazy-load files.
+ */
+export const preInscriptionDocsCol = (piId: string) =>
+  `pre_inscriptions/${piId}/documents`
+export const preInscriptionDocDoc = (piId: string, docId: string) =>
+  `pre_inscriptions/${piId}/documents/${docId}`
+
 export const settingsInscriptionDoc = () => 'settings_inscription/config'
+
+/**
+ * RV slot counters. One doc per date (DD-MM-YYYY for legacy compat,
+ * since the slash had to be removed from the doc id).
+ */
+export const rvCounterDoc = (dateDDMMYYYYDashed: string) =>
+  `rv_counters/${dateDDMMYYYYDashed}`
 
 // ─────────────────────────────────────────────────────────────
 // System
@@ -171,3 +195,46 @@ export const emploiDuTempsSeancesCol = (classeId: string) =>
   `emploisDuTemps/${classeId}/seances`
 export const archiveEmploiDuTempsSeancesCol = (annee: string, classeId: string) =>
   `archive/${annee}/emploisDuTemps/${classeId}/seances`
+
+// ─────────────────────────────────────────────────────────────
+// Path validators — shared by collectionGroup consumers
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Parse a Firestore doc path under `/classes/{cid}/eleves/{eid}/...` and
+ * return the parent classeId + eleveId.
+ *
+ * Returns `null` if the path is NOT under the live `classes/` root —
+ * i.e. archive paths like `archive/{annee}/classes/.../eleves/.../...`
+ * are explicitly rejected. This is the canonical shape check for any
+ * collectionGroup consumer that needs to filter out archived documents.
+ *
+ * Why centralized: vanilla-era archived data leaks into collectionGroup
+ * queries because `match /{path=**}/{collection}/{id}` rules match any
+ * depth. Each consumer used to inline its own path parsing — easy to get
+ * wrong, easy to forget. Routing all collectionGroup consumers through
+ * this helper guarantees consistent live-only filtering.
+ *
+ * @param path  e.g. "classes/abc/eleves/xyz/absences/123"
+ * @param subColName  optional last segment to validate (e.g. "absences").
+ *                    If provided, returns null for paths that don't end in
+ *                    `/{subColName}/{anyId}`. Saves a separate check.
+ */
+export function parseLiveElevePath(
+  path: string,
+  subColName?: string
+): { classeId: string; eleveId: string } | null {
+  const parts = path.split('/')
+  if (parts.length < 4) return null
+  if (parts[0] !== 'classes') return null
+  if (parts[2] !== 'eleves') return null
+  const classeId = parts[1]
+  const eleveId = parts[3]
+  if (!classeId || !eleveId) return null
+  if (subColName !== undefined) {
+    // Expect [classes, cid, eleves, eid, subColName, docId] = 6 segments
+    if (parts.length !== 6) return null
+    if (parts[4] !== subColName) return null
+  }
+  return { classeId, eleveId }
+}

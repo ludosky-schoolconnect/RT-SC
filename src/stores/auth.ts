@@ -64,7 +64,13 @@ function deriveRole(args: {
   eleveSession: EleveSession | null
   parentSession: ParentSession | null
 }): Role {
-  if (args.profil) return args.profil.role === 'admin' ? 'admin' : 'prof'
+  if (args.profil) {
+    // Role field on the Professeur doc is the source of truth.
+    // Anything unrecognized falls through to 'prof' as a safe default.
+    if (args.profil.role === 'admin') return 'admin'
+    if (args.profil.role === 'caissier') return 'caissier'
+    return 'prof'
+  }
   if (args.eleveSession) return 'eleve'
   if (args.parentSession) return 'parent'
   return null
@@ -126,6 +132,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   reset: () => {
     saveEleveSession(null)
+    // Also wipe the caissier display-name override. Using dynamic
+    // import avoids a circular dependency between stores/auth and
+    // stores/caissier (auth is imported widely; caissier is narrow).
+    try {
+      localStorage.removeItem('sc_caissier_display_name')
+    } catch {
+      /* ignore */
+    }
     set({
       user: null,
       profil: null,

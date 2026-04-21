@@ -1,15 +1,24 @@
 /**
  * RT-SC · Admin dashboard.
  *
- * Wires the shared DashboardLayout with the 4 admin tabs:
- *   - Classes (real, Phase 3a)
- *   - Élèves  (placeholder, comes in Phase 3b)
- *   - Profs   (placeholder, comes in Phase 3c)
- *   - Année   (placeholder, comes in Phase 3d)
+ * All admin destinations in ONE flat tab list. The DashboardLayout
+ * handles responsive overflow: on a wide desktop, every tab renders
+ * directly; on a narrow screen, the excess collapses into a "Plus"
+ * menu automatically.
  *
- * The school name shown in the header comes from /ecole/config.
- * The active tab is URL-driven (?tab=classes), so refreshing or sharing
- * a link keeps you on the same tab.
+ * Destinations (in priority order — the most-used come first so
+ * they're always visible even on narrow screens):
+ *   1. Classes   — roster setup
+ *   2. Élèves    — student directory
+ *   3. Profs     — staff directory + passkeys
+ *   4. Vie       — daily absences + appels monitoring
+ *   5. Inscriptions — demandes + rendez-vous (no guichet — that's caissier)
+ *   6. Emploi    — emploi du temps
+ *   7. Annonces  — school-wide communications
+ *   8. Année     — config, frais de scolarité, rollover, archives
+ *
+ * Admin has NO access to Finances (terminal de caisse) or Guichet
+ * (those are caissier-exclusive in Phase 6d).
  */
 
 import {
@@ -20,6 +29,8 @@ import {
   CalendarClock,
   CalendarOff,
   Megaphone,
+  UserPlus,
+  CreditCard,
 } from 'lucide-react'
 import { DashboardLayout, type DashboardTab } from '@/components/layout/DashboardLayout'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
@@ -30,17 +41,21 @@ import { ProfsTab } from './tabs/profs/ProfsTab'
 import { AnneeTab } from './tabs/annee/AnneeTab'
 import { AnnoncesAdminTab } from './tabs/annonces/AnnoncesAdminTab'
 import { EmploiAdminTab } from './tabs/emploi/EmploiAdminTab'
+import { InscriptionsAdminTab } from './tabs/inscriptions/InscriptionsAdminTab'
+import { AbonnementTab } from './tabs/abonnement/AbonnementTab'
 import { VieScolaireTab } from '@/routes/_shared/absences/VieScolaireTab'
 import { TabPlaceholder } from './tabs/TabPlaceholder'
 
 const TABS: DashboardTab[] = [
-  { id: 'classes',  label: 'Classes',  icon: <SchoolIcon className="h-full w-full" /> },
-  { id: 'eleves',   label: 'Élèves',   icon: <GraduationCap className="h-full w-full" /> },
-  { id: 'profs',    label: 'Profs',    icon: <BookOpen className="h-full w-full" /> },
-  { id: 'vie',      label: 'Vie',      icon: <CalendarOff className="h-full w-full" /> },
-  { id: 'emploi',   label: 'Emploi',   icon: <CalendarClock className="h-full w-full" /> },
-  { id: 'annonces', label: 'Annonces', icon: <Megaphone className="h-full w-full" /> },
-  { id: 'annee',    label: 'Année',    icon: <CalendarDays className="h-full w-full" /> },
+  { id: 'classes',      label: 'Classes',      icon: <SchoolIcon className="h-full w-full" /> },
+  { id: 'eleves',       label: 'Élèves',       icon: <GraduationCap className="h-full w-full" /> },
+  { id: 'profs',        label: 'Profs',        icon: <BookOpen className="h-full w-full" /> },
+  { id: 'vie',          label: 'Vie',          icon: <CalendarOff className="h-full w-full" /> },
+  { id: 'inscriptions', label: 'Inscriptions', icon: <UserPlus className="h-full w-full" /> },
+  { id: 'emploi',       label: 'Emploi',       icon: <CalendarClock className="h-full w-full" /> },
+  { id: 'annonces',     label: 'Annonces',     icon: <Megaphone className="h-full w-full" /> },
+  { id: 'annee',        label: 'Année',        icon: <CalendarDays className="h-full w-full" /> },
+  { id: 'abonnement',   label: 'Abonnement',   icon: <CreditCard className="h-full w-full" /> },
 ]
 
 export default function AdminDashboard() {
@@ -69,12 +84,16 @@ export default function AdminDashboard() {
                 description="Vue école entière. Vous pouvez valider, refuser ou supprimer les déclarations."
               />
             )
+          case 'inscriptions':
+            return <InscriptionsAdminTab />
           case 'emploi':
             return <EmploiAdminTab />
           case 'annonces':
             return <AnnoncesAdminTab />
           case 'annee':
             return <AnneeTab />
+          case 'abonnement':
+            return <AbonnementTab />
           default:
             return <TabPlaceholder tabId={activeTab} />
         }
