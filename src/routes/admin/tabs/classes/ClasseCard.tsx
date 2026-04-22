@@ -7,11 +7,12 @@
  */
 
 import { motion } from 'framer-motion'
-import { KeyRound, Users, ChevronRight } from 'lucide-react'
+import { KeyRound, Users, ChevronRight, Crown } from 'lucide-react'
 import type { Classe } from '@/types/models'
 import { nomClasse } from '@/lib/benin'
 import { Badge } from '@/components/ui/Badge'
 import { useClasseEleveCount } from '@/hooks/useClasses'
+import { useProfs } from '@/hooks/useProfs'
 import { cn } from '@/lib/cn'
 
 interface ClasseCardProps {
@@ -31,6 +32,13 @@ const SERIE_BADGE_VARIANT = {
 
 export function ClasseCard({ classe, onClick }: ClasseCardProps) {
   const { data: count, isLoading: loadingCount } = useClasseEleveCount(classe.id)
+  const { data: profs = [] } = useProfs()
+
+  // Resolve PP display name from the cached profs list — zero extra
+  // reads since useProfs is already subscribed app-wide.
+  const pp = classe.profPrincipalId
+    ? profs.find((p) => p.id === classe.profPrincipalId)
+    : null
 
   return (
     <motion.button
@@ -70,7 +78,7 @@ export function ClasseCard({ classe, onClick }: ClasseCardProps) {
       </div>
 
       {/* Élève count */}
-      <div className="flex items-center gap-1.5 text-[0.8125rem] text-ink-600 mb-3">
+      <div className="flex items-center gap-1.5 text-[0.8125rem] text-ink-600 mb-2">
         <Users className="h-3.5 w-3.5 text-ink-400" aria-hidden />
         {loadingCount ? (
           <span className="text-ink-400">—</span>
@@ -79,6 +87,27 @@ export function ClasseCard({ classe, onClick }: ClasseCardProps) {
             <span className="font-semibold text-ink-800">{count}</span>
             <span>{count === 1 ? 'élève' : 'élèves'}</span>
           </>
+        )}
+      </div>
+
+      {/* Professeur Principal line. Gold badge-style when assigned,
+          muted warning when not. Tapping the card opens the modal
+          where admin can set it. */}
+      <div className="flex items-center gap-1.5 text-[0.8125rem] mb-3">
+        <Crown
+          className={cn(
+            'h-3.5 w-3.5',
+            pp ? 'text-warning' : 'text-ink-300'
+          )}
+          aria-hidden
+        />
+        {pp ? (
+          <span className="truncate">
+            <span className="text-ink-400 mr-1">PP :</span>
+            <span className="font-semibold text-navy">{pp.nom}</span>
+          </span>
+        ) : (
+          <span className="italic text-ink-400">PP non assigné</span>
         )}
       </div>
 

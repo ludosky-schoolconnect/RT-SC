@@ -98,7 +98,7 @@ export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
   // auth resolves.
   if (hydrating) {
     return (
-      <AuthLayout>
+      <AuthLayout title="Chargement…">
         <div className="flex items-center justify-center py-20">
           <Spinner size="md" />
         </div>
@@ -156,64 +156,53 @@ export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout
+      kicker="Accès personnel"
+      title="Code d'accès requis"
+      subtitle="Entrez le code hebdomadaire communiqué par l'administration pour accéder à la page de connexion."
+    >
       <motion.div
         key={shake}
         initial={shake > 0 ? { x: 0 } : false}
         animate={shake > 0 ? { x: [0, -8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
         transition={{ duration: 0.4 }}
       >
-        <div className="mx-auto max-w-md">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-navy text-gold shadow-sm">
-              <Shield className="h-6 w-6" aria-hidden />
-            </div>
-            <div>
-              <p className="text-[0.65rem] font-bold uppercase tracking-widest text-ink-400">
-                Accès personnel
-              </p>
-              <h1 className="font-display text-2xl font-bold text-navy">
-                Code d'accès requis
-              </h1>
-            </div>
+        <div className="flex items-center justify-center mb-5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-navy text-gold shadow-sm">
+            <Shield className="h-6 w-6" aria-hidden />
           </div>
+        </div>
 
-          <p className="text-[0.875rem] text-ink-600 leading-snug mb-5">
-            Entrez le code hebdomadaire communiqué par l'administration
-            pour accéder à la page de connexion.
-          </p>
+        <form onSubmit={verifyCode} className="space-y-4">
+          <Input
+            label="Code d'accès de l'école"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="123456"
+            autoFocus
+            inputMode="text"
+            autoComplete="off"
+            maxLength={12}
+            error={error ?? undefined}
+            disabled={submitting}
+          />
 
-          <form onSubmit={verifyCode} className="space-y-4">
-            <Input
-              label="Code d'accès de l'école"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="123456"
-              autoFocus
-              inputMode="text"
-              autoComplete="off"
-              maxLength={12}
-              error={error ?? undefined}
-              disabled={submitting}
-            />
+          <Button
+            type="submit"
+            loading={submitting}
+            className="w-full"
+          >
+            Continuer
+          </Button>
+        </form>
 
-            <Button
-              type="submit"
-              loading={submitting}
-              className="w-full"
-            >
-              Continuer
-            </Button>
-          </form>
-
-          <div className="mt-5 rounded-md bg-ink-50/60 border border-ink-100 p-3">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0 text-ink-400 mt-0.5" aria-hidden />
-              <p className="text-[0.78rem] text-ink-500 leading-snug">
-                Code expiré ? Demandez le nouveau à votre administrateur.
-                Le code change chaque semaine.
-              </p>
-            </div>
+        <div className="mt-5 rounded-md bg-ink-50/60 border border-ink-100 p-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 text-ink-400 mt-0.5" aria-hidden />
+            <p className="text-[0.78rem] text-ink-500 leading-snug">
+              Code expiré ? Demandez le nouveau à votre administrateur.
+              Le code change chaque semaine.
+            </p>
           </div>
         </div>
       </motion.div>
