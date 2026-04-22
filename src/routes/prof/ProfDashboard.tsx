@@ -24,6 +24,7 @@ import {
   Award,
   FlaskConical,
   MonitorPlay,
+  UserCircle2,
 } from 'lucide-react'
 import { DashboardLayout, type DashboardTab } from '@/components/layout/DashboardLayout'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
@@ -33,6 +34,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useMemo } from 'react'
 import { NotesTab } from './tabs/notes/NotesTab'
 import { MesClassesTab } from './tabs/classes/MesClassesTab'
+import { MonProfilTab } from './tabs/profil/MonProfilTab'
 import { AnnoncesProfTab } from './tabs/annonces/AnnoncesProfTab'
 import { EmploiProfTab } from './tabs/emploi/EmploiProfTab'
 import { AppelProfTab } from './tabs/appel/AppelProfTab'
@@ -54,6 +56,7 @@ const TABS: DashboardTab[] = [
   { id: 'civisme',  label: 'Civisme',     icon: <Award className="h-full w-full" /> },
   { id: 'labo',     label: 'Labo',        icon: <FlaskConical className="h-full w-full" /> },
   { id: 'visio',    label: 'Visio',       icon: <MonitorPlay className="h-full w-full" /> },
+  { id: 'profil',   label: 'Mon profil',  icon: <UserCircle2 className="h-full w-full" /> },
 ]
 
 export default function ProfDashboard() {
@@ -111,6 +114,8 @@ export default function ProfDashboard() {
             return <LaboProfTab />
           case 'visio':
             return <VisioHostTab scope="prof" />
+          case 'profil':
+            return <MonProfilTab />
           default:
             return <TabPlaceholder tabId={activeTab} />
         }

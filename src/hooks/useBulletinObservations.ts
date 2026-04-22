@@ -69,16 +69,24 @@ export function useUpdateBulletinObservations() {
       )
     },
     onSettled: (_data, _err, vars) => {
-      // The period-view hook keys on (classeId, eleveId, periode) — invalidate
-      // to refetch the bulletin doc so the display picks up the new values.
-      qc.invalidateQueries({
-        queryKey: [
-          'bulletin-view-period-base',
-          vars.classeId,
-          vars.eleveId,
-          vars.periode,
-        ],
-      })
+      // Invalidate the right read hook based on whether this was a
+      // period or annual bulletin write. The two views use different
+      // query keys (Session 3 left them deliberately separate so a
+      // period-only update doesn't refetch all annual computations).
+      if (vars.periode === 'Année') {
+        qc.invalidateQueries({
+          queryKey: ['bulletin-view-annual', vars.classeId, vars.eleveId],
+        })
+      } else {
+        qc.invalidateQueries({
+          queryKey: [
+            'bulletin-view-period-base',
+            vars.classeId,
+            vars.eleveId,
+            vars.periode,
+          ],
+        })
+      }
       // The compact bulletin list on BulletinsTab reads a different key; we
       // don't need to touch it because it doesn't surface these fields.
     },

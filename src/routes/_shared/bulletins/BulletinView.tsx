@@ -628,6 +628,19 @@ function AnnualBody({ view }: { view: BulletinAnnualView }) {
           </p>
         </div>
       </div>
+
+      {/* Session 5 — observations annuelles + décision du conseil annuel.
+          Same display component as the period body uses. Only renders
+          when at least one is set, mirroring the period behavior so
+          fresh annual bulletins stay clean. */}
+      {(view.observationsChef || view.decisionConseil) && (
+        <div className="mt-4">
+          <ObservationsDisplay
+            observations={view.observationsChef}
+            decision={view.decisionConseil}
+          />
+        </div>
+      )}
     </div>
   )
 }

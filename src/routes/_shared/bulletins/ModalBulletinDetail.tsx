@@ -35,6 +35,7 @@ import { useClasses } from '@/hooks/useClasses'
 import { savePdf } from '@/lib/pdf/bulletinPdf'
 import type { Periode } from '@/types/models'
 import type { EnrichedBulletinPeriodView } from '@/lib/bulletinEnrichment'
+import type { BulletinAnnualView } from '@/lib/bulletinView'
 import { BulletinView } from './BulletinView'
 import { BulletinObservationsEditor } from './BulletinObservationsEditor'
 
@@ -98,6 +99,14 @@ export function ModalBulletinDetail({
       ? (view as EnrichedBulletinPeriodView)
       : null
 
+  // Session 5 — annual view also carries observationsChef/decisionConseil
+  // (added in Session 3.1). Cast for the editor in annual mode so admin
+  // and PP can write end-of-year observations from the same surface.
+  const annualView =
+    mode === 'annuelle' && view
+      ? (view as BulletinAnnualView)
+      : null
+
   useEffect(() => {
     // No-op for now; future: scroll to top when open
   }, [open])
@@ -142,6 +151,18 @@ export function ModalBulletinDetail({
                   periode={periode}
                   currentObservations={periodView.observationsChef}
                   currentDecision={periodView.decisionConseil}
+                />
+              )}
+              {canEdit && mode === 'annuelle' && annualView && (
+                <BulletinObservationsEditor
+                  classeId={classeId}
+                  eleveId={eleveId}
+                  // Annual bulletin doc lives under id "Année" — Periode
+                  // is `string` so passing the literal is type-safe.
+                  periode={'Année'}
+                  currentObservations={annualView.observationsChef}
+                  currentDecision={annualView.decisionConseil}
+                  isAnnual
                 />
               )}
               <BulletinView view={view} mode={mode} />

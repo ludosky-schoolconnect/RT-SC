@@ -43,11 +43,23 @@ const DECISION_OPTIONS: DecisionConseil[] = [
 interface BulletinObservationsEditorProps {
   classeId: string
   eleveId: string
+  /**
+   * Period name for the bulletin doc — typically a real period like
+   * "Trimestre 1" / "Semestre 2", or the literal "Année" for the
+   * annual bulletin. Both write to /bulletins/{periode}.
+   */
   periode: Periode
   /** Currently stored observations (from the enriched view). */
   currentObservations?: string
   /** Currently stored décision (from the enriched view). */
   currentDecision?: DecisionConseil
+  /**
+   * Session 5 — when true, the editor renders with annual-bulletin
+   * copy ("Observations annuelles", "Décision du conseil annuel").
+   * Behavior is otherwise identical: the same fields are written to
+   * the same doc structure (just under doc id "Année").
+   */
+  isAnnual?: boolean
 }
 
 export function BulletinObservationsEditor({
@@ -56,6 +68,7 @@ export function BulletinObservationsEditor({
   periode,
   currentObservations,
   currentDecision,
+  isAnnual = false,
 }: BulletinObservationsEditorProps) {
   const mut = useUpdateBulletinObservations()
   const toast = useToast()
@@ -122,7 +135,7 @@ export function BulletinObservationsEditor({
           </div>
           <div className="min-w-0">
             <p className="font-display text-[0.875rem] font-semibold text-navy leading-tight">
-              Observations &amp; décision
+              {isAnnual ? 'Observations annuelles' : 'Observations & décision'}
             </p>
             <p className="text-[0.7rem] text-ink-500 leading-snug">
               Visible uniquement par l'admin et le PP de la classe.
@@ -153,7 +166,11 @@ export function BulletinObservationsEditor({
         />
 
         <Select
-          label="Décision du conseil de classe"
+          label={
+            isAnnual
+              ? 'Décision du conseil annuel'
+              : 'Décision du conseil de classe'
+          }
           value={decision}
           onChange={(e) =>
             setDecision(e.target.value as DecisionConseil | '')
