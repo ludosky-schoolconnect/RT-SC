@@ -35,6 +35,7 @@ import { Section, SectionHeader } from '@/components/layout/Section'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch'
 import { RecompenseFormModal } from './RecompenseFormModal'
 import { cn } from '@/lib/cn'
 import type { Recompense } from '@/types/models'
@@ -225,28 +226,19 @@ function RecompenseRow({
       </div>
 
       <div className="flex items-start gap-1 shrink-0">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={r.disponible}
-          aria-label={r.disponible ? 'Masquer la récompense' : 'Rendre disponible'}
-          onClick={onToggleDisponible}
+        <ToggleSwitch
+          checked={r.disponible}
+          onChange={() => onToggleDisponible()}
           disabled={toggling}
-          title={r.disponible ? 'Disponible — cliquez pour masquer' : 'Masquée — cliquez pour rendre disponible'}
-          className={cn(
-            'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-gold/40',
-            r.disponible ? 'bg-success' : 'bg-ink-200',
-            toggling && 'opacity-60'
-          )}
-        >
-          <span
-            className={cn(
-              'inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
-              r.disponible ? 'translate-x-[22px]' : 'translate-x-[2px]'
-            )}
-          />
-        </button>
+          ariaLabel={
+            r.disponible ? 'Masquer la récompense' : 'Rendre disponible'
+          }
+          title={
+            r.disponible
+              ? 'Disponible — cliquez pour masquer'
+              : 'Masquée — cliquez pour rendre disponible'
+          }
+        />
         <button
           type="button"
           onClick={onEdit}

@@ -23,12 +23,12 @@ import {
 } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch'
 import {
   useAddRecompense,
   useUpdateRecompense,
 } from '@/hooks/useRecompenses'
 import { useToast } from '@/stores/toast'
-import { cn } from '@/lib/cn'
 import type { Recompense } from '@/types/models'
 
 interface Props {
@@ -166,27 +166,12 @@ export function RecompenseFormModal({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={disponible}
-            aria-label="Récompense disponible"
-            onClick={() => setDisponible((v) => !v)}
+          <ToggleSwitch
+            checked={disponible}
+            onChange={setDisponible}
             disabled={submitting}
-            className={cn(
-              'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 focus-visible:ring-offset-1',
-              disponible ? 'bg-success' : 'bg-ink-200',
-              submitting && 'opacity-60 cursor-not-allowed'
-            )}
-          >
-            <span
-              className={cn(
-                'inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
-                disponible ? 'translate-x-[22px]' : 'translate-x-[2px]'
-              )}
-            />
-          </button>
+            ariaLabel="Récompense disponible"
+          />
         </div>
 
         {error && (
