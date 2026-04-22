@@ -14,7 +14,7 @@ import { SubscriptionGuard } from '@/components/guards/SubscriptionGuard'
 import { ProtectedRoute } from '@/components/guards/ProtectedRoute'
 import { ToastContainer } from '@/components/ui/ToastContainer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { useSettingsStore, applyFontSize, applyTheme } from '@/stores/settings'
+import { useSettingsStore, applyFontSize } from '@/stores/settings'
 
 // Eagerly loaded — small public-facing pages
 import LandingPage from '@/routes/landing/LandingPage'
@@ -61,15 +61,6 @@ export default function App() {
   useEffect(() => {
     applyFontSize(fontSize)
   }, [fontSize])
-
-  // Same pattern for theme. Sets <html data-theme="..."> so the CSS
-  // layer (when migrated to variables) recolors the entire app.
-  // Until that migration ships, this is a no-op visually but the
-  // user's choice is captured + persisted.
-  const themeMode = useSettingsStore((s) => s.themeMode)
-  useEffect(() => {
-    applyTheme(themeMode)
-  }, [themeMode])
 
   return (
     <AuthProvider>
