@@ -21,6 +21,7 @@ import LandingPage from '@/routes/landing/LandingPage'
 import WelcomePage from '@/routes/welcome/WelcomePage'
 import AdminLogin from '@/routes/auth/AdminLogin'
 import ProfAuth from '@/routes/auth/ProfAuth'
+import { ProfPasskeyGate } from '@/routes/auth/ProfPasskeyGate'
 import CaisseAuth from '@/routes/auth/CaisseAuth'
 import PersonnelChoice from '@/routes/auth/PersonnelChoice'
 import EleveChoice from '@/routes/auth/EleveChoice'
@@ -84,8 +85,22 @@ export default function App() {
                 login + forgot-password tabs that stamp the correct
                 role at account creation. */}
             <Route path="/auth/personnel" element={<PersonnelChoice />} />
-            <Route path="/auth/personnel/prof" element={<ProfAuth />} />
-            <Route path="/auth/personnel/caisse" element={<CaisseAuth />} />
+            <Route
+              path="/auth/personnel/prof"
+              element={
+                <ProfPasskeyGate>
+                  <ProfAuth />
+                </ProfPasskeyGate>
+              }
+            />
+            <Route
+              path="/auth/personnel/caisse"
+              element={
+                <ProfPasskeyGate>
+                  <CaisseAuth />
+                </ProfPasskeyGate>
+              }
+            />
 
             {/* Backward compat — anyone hitting /auth/prof lands on
                 the chooser (they almost certainly meant Professeur,

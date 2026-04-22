@@ -139,8 +139,15 @@ export interface FinancesConfig {
 }
 
 export interface SecuriteConfig {
-  /** Legacy field — 6-digit code gating prof signup. */
+  /** Legacy field — 6-digit code gating prof signup. Session 4b also
+   *  uses it to gate fresh prof logins (see ProfPasskeyGate). */
   passkeyProf: string
+  /** Server timestamp of last prof passkey rotation. Consumed by the
+   *  admin PasskeyProfPanel to show "Last rotated N days ago" and nudge
+   *  admin toward weekly rotation. Optional — legacy docs written
+   *  before Session 4b simply won't have this field, and the panel
+   *  treats missing as "jamais". */
+  passkeyProfRotatedAt?: Timestamp
   /**
    * 6-digit code gating caissier signup (Phase 6d.2). Separate from
    * passkeyProf so admin can rotate them independently. If the field
@@ -149,6 +156,8 @@ export interface SecuriteConfig {
    * using passkeyProf — so no existing flow breaks during rollout.
    */
   passkeyCaisse?: string
+  /** Symmetric rotation timestamp for the caisse passkey. */
+  passkeyCaisseRotatedAt?: Timestamp
 }
 
 export interface SubscriptionDoc {

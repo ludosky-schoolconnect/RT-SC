@@ -19,7 +19,7 @@
  * useRegeneratePasskeyCaisse.
  */
 
-import { Copy, RefreshCw, KeyRound, Wallet, AlertCircle } from 'lucide-react'
+import { Copy, RefreshCw, KeyRound, Wallet, AlertCircle, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { Spinner } from '@/components/ui/Spinner'
@@ -30,6 +30,36 @@ import {
 } from '@/hooks/useProfsMutations'
 import { useToast } from '@/stores/toast'
 import { useConfirm } from '@/stores/confirm'
+import type { Timestamp } from 'firebase/firestore'
+
+/**
+ * Format a Firestore Timestamp as a relative "N days ago" label,
+ * with an amber tint when rotation is overdue (> 7 days).
+ *
+ * Policy choice: we nudge weekly, not enforce. Admin may have
+ * legitimate reasons (small school, trusted staff) to rotate less
+ * frequently. This is a nudge, not a gate.
+ */
+function formatRotationAge(ts: Timestamp | undefined): {
+  label: string
+  overdue: boolean
+} {
+  if (!ts) {
+    return { label: 'Jamais changé', overdue: true }
+  }
+  const ms = Date.now() - ts.toMillis()
+  const days = Math.floor(ms / 86_400_000)
+  if (days < 1) return { label: "Changé aujourd'hui", overdue: false }
+  if (days === 1) return { label: 'Changé il y a 1 jour', overdue: false }
+  if (days < 7) return { label: `Changé il y a ${days} jours`, overdue: false }
+  if (days === 7) return { label: 'Changé il y a 1 semaine', overdue: true }
+  const weeks = Math.floor(days / 7)
+  if (weeks < 4) return { label: `Changé il y a ${weeks} semaines`, overdue: true }
+  const months = Math.floor(days / 30)
+  if (months === 1) return { label: 'Changé il y a 1 mois', overdue: true }
+  if (months < 12) return { label: `Changé il y a ${months} mois`, overdue: true }
+  return { label: 'Changé il y a plus d\'un an', overdue: true }
+}
 
 export function PasskeyProfPanel() {
   const { data: securite, isLoading } = useEcoleSecurite()
@@ -40,6 +70,8 @@ export function PasskeyProfPanel() {
 
   const passkeyProf = securite?.passkeyProf
   const passkeyCaisse = securite?.passkeyCaisse
+  const profRotation = formatRotationAge(securite?.passkeyProfRotatedAt)
+  const caisseRotation = formatRotationAge(securite?.passkeyCaisseRotatedAt)
 
   async function copy(code: string, label: string) {
     try {
@@ -140,6 +172,25 @@ export function PasskeyProfPanel() {
         >
           {passkeyProf ? 'Régénérer' : 'Générer'}
         </Button>
+
+        {/* Session 4b — rotation nudge. Amber tint past 7 days since
+            we don't have server-side auto-rotation yet. When the
+            Blaze-backed scheduler lands (Session 5+) this hint can
+            become purely informational. */}
+        {passkeyProf && (
+          <div
+            className={
+              'mt-2 flex items-center gap-1.5 text-[0.72rem] ' +
+              (profRotation.overdue ? 'text-warning' : 'text-ink-400')
+            }
+          >
+            <Clock className="h-3 w-3 shrink-0" aria-hidden />
+            <span>{profRotation.label}</span>
+            {profRotation.overdue && (
+              <span className="font-semibold">· à renouveler</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ─── Code caisse ──────────────────────────────────── */}
@@ -194,6 +245,21 @@ export function PasskeyProfPanel() {
         >
           {passkeyCaisse ? 'Régénérer' : 'Générer un code distinct'}
         </Button>
+
+        {passkeyCaisse && (
+          <div
+            className={
+              'mt-2 flex items-center gap-1.5 text-[0.72rem] ' +
+              (caisseRotation.overdue ? 'text-warning' : 'text-ink-400')
+            }
+          >
+            <Clock className="h-3 w-3 shrink-0" aria-hidden />
+            <span>{caisseRotation.label}</span>
+            {caisseRotation.overdue && (
+              <span className="font-semibold">· à renouveler</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
