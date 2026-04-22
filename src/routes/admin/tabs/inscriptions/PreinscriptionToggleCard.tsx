@@ -110,14 +110,14 @@ export function PreinscriptionToggleCard() {
           </p>
 
           {!ouvertes && (
-            <div className="mt-2 flex items-start gap-1.5 text-[0.7rem] text-success-dark bg-success-bg/50 rounded-md px-2 py-1.5 border border-success/20">
+            <div className="mt-2 flex items-start gap-1.5 text-[0.7rem] text-ink-600 bg-white/60 rounded-md px-2 py-1.5 border border-ink-200">
               <ShieldCheck
-                className="h-3.5 w-3.5 shrink-0 mt-0.5"
+                className="h-3.5 w-3.5 shrink-0 mt-0.5 text-ink-500"
                 aria-hidden
               />
               <span className="leading-snug">
-                Protection serveur active : les règles Firestore refusent
-                toute création, même via manipulation de la console.
+                Aucune soumission ne sera acceptée tant que les
+                pré-inscriptions resteront fermées.
               </span>
             </div>
           )}
