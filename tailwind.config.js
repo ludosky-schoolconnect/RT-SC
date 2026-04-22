@@ -25,6 +25,12 @@ export default {
           pale:    token('gold-pale'),
           dark:    token('gold-dark'),
         },
+        // `white` is theme-aware — flips to dark surface in dark mode,
+        // warm cream in sepia. This makes `bg-white` cards recolor
+        // correctly across themes. Side effect: `text-white` on dark
+        // surfaces (e.g. `bg-navy` buttons) loses contrast in dark
+        // mode — those usages will be migrated to a literal-white
+        // utility in the Step D audit pass.
         white:     token('white'),
         'off-white': token('off-white'),
         ink: {
