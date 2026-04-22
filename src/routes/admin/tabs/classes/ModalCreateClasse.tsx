@@ -18,7 +18,7 @@ import {
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import { Radio } from '@/components/ui/Checkbox'
+import { RadioCard } from '@/components/ui/Checkbox'
 import { useCreateClasse } from '@/hooks/useClassesMutations'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import { useToast } from '@/stores/toast'
@@ -116,21 +116,19 @@ export function ModalCreateClasse({ open, onClose }: ModalCreateClasseProps) {
               Cycle
             </legend>
             <div className="grid grid-cols-2 gap-2">
-              <Radio
+              <RadioCard
                 name="cycle"
                 checked={cycle === 'premier'}
                 onChange={() => setCycle('premier')}
                 label="Premier cycle"
                 description="6ème → 3ème"
-                containerClassName="bg-white border border-ink-100 hover:border-navy rounded-md p-3 transition-colors"
               />
-              <Radio
+              <RadioCard
                 name="cycle"
                 checked={cycle === 'second'}
                 onChange={() => setCycle('second')}
                 label="Second cycle"
                 description="2nde → Terminale"
-                containerClassName="bg-white border border-ink-100 hover:border-navy rounded-md p-3 transition-colors"
               />
             </div>
           </fieldset>

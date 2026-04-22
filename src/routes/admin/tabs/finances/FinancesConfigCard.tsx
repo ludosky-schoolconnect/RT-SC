@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import { Save, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Checkbox } from '@/components/ui/Checkbox'
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch'
 import { useToast } from '@/stores/toast'
 import {
   useFinancesConfig,
@@ -115,22 +115,43 @@ export function FinancesConfigCard() {
       </div>
 
       <div className="rounded-md bg-info-bg/60 border border-info/20 p-3 mb-4">
-        <p className="text-[0.78rem] font-semibold text-navy mb-2">
+        <p className="text-[0.78rem] font-semibold text-navy mb-3">
           Gratuité filles (subvention gouvernementale)
         </p>
-        <div className="space-y-2">
-          <Checkbox
-            checked={grat1er}
-            onChange={(e) => setGrat1er(e.target.checked)}
-            label="1er cycle (6ème – 3ème)"
-            description="Les filles de 6ème à 3ème sont exemptées de scolarité."
-          />
-          <Checkbox
-            checked={grat2nd}
-            onChange={(e) => setGrat2nd(e.target.checked)}
-            label="2nd cycle (2nde – Tle)"
-            description="Les filles de 2nde à Terminale sont exemptées de scolarité."
-          />
+        <div className="space-y-3">
+          {/* 1er cycle toggle row */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-[0.875rem] text-ink-800 leading-snug">
+                1er cycle (6ème – 3ème)
+              </p>
+              <p className="text-[0.75rem] text-ink-500 leading-snug mt-0.5">
+                Les filles de 6ème à 3ème sont exemptées de scolarité.
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={grat1er}
+              onChange={setGrat1er}
+              ariaLabel="Activer la gratuité filles pour le premier cycle"
+            />
+          </div>
+
+          {/* 2nd cycle toggle row */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-[0.875rem] text-ink-800 leading-snug">
+                2nd cycle (2nde – Tle)
+              </p>
+              <p className="text-[0.75rem] text-ink-500 leading-snug mt-0.5">
+                Les filles de 2nde à Terminale sont exemptées de scolarité.
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={grat2nd}
+              onChange={setGrat2nd}
+              ariaLabel="Activer la gratuité filles pour le second cycle"
+            />
+          </div>
         </div>
       </div>
 

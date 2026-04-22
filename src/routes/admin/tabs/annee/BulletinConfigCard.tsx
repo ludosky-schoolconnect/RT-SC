@@ -18,7 +18,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Ca
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
-import { Radio } from '@/components/ui/Checkbox'
+import { RadioCard } from '@/components/ui/Checkbox'
 import { Spinner } from '@/components/ui/Spinner'
 import {
   useBulletinConfig,
@@ -167,21 +167,19 @@ export function BulletinConfigCard() {
               Type de période
             </legend>
             <div className="grid grid-cols-2 gap-2">
-              <Radio
+              <RadioCard
                 name="typePeriode"
                 checked={typePeriode === 'Trimestre'}
                 onChange={() => changeTypePeriode('Trimestre')}
                 label="Trimestre"
                 description="3 périodes par défaut"
-                containerClassName="bg-white border border-ink-100 hover:border-navy rounded-md p-3 transition-colors"
               />
-              <Radio
+              <RadioCard
                 name="typePeriode"
                 checked={typePeriode === 'Semestre'}
                 onChange={() => changeTypePeriode('Semestre')}
                 label="Semestre"
                 description="2 périodes par défaut"
-                containerClassName="bg-white border border-ink-100 hover:border-navy rounded-md p-3 transition-colors"
               />
             </div>
           </fieldset>
@@ -222,55 +220,27 @@ export function BulletinConfigCard() {
               Formule moyenne annuelle
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
-              <label
-                className={[
-                  'flex-1 flex items-start gap-2 rounded-md border px-3 py-2.5 cursor-pointer transition-colors',
-                  formuleAnnuelle === 'standard'
-                    ? 'border-navy bg-info-bg/40'
-                    : 'border-ink-100 hover:border-ink-200 bg-white',
-                ].join(' ')}
-              >
-                <input
-                  type="radio"
-                  name="formuleAnnuelle"
-                  checked={formuleAnnuelle === 'standard'}
-                  onChange={() => setFormuleAnnuelle('standard')}
-                  className="mt-0.5 accent-navy"
-                />
-                <div>
-                  <p className="font-semibold text-navy text-[0.8125rem] leading-tight">
-                    Standard <span className="text-gold-dark text-[0.7rem]">(Bénin)</span>
-                  </p>
-                  <p className="text-[0.7rem] text-ink-500 mt-0.5 leading-snug">
-                    La dernière période compte double. Ex. semestres&nbsp;:
-                    (S1 + S2×2) / 3.
-                  </p>
-                </div>
-              </label>
-              <label
-                className={[
-                  'flex-1 flex items-start gap-2 rounded-md border px-3 py-2.5 cursor-pointer transition-colors',
-                  formuleAnnuelle === 'simple'
-                    ? 'border-navy bg-info-bg/40'
-                    : 'border-ink-100 hover:border-ink-200 bg-white',
-                ].join(' ')}
-              >
-                <input
-                  type="radio"
-                  name="formuleAnnuelle"
-                  checked={formuleAnnuelle === 'simple'}
-                  onChange={() => setFormuleAnnuelle('simple')}
-                  className="mt-0.5 accent-navy"
-                />
-                <div>
-                  <p className="font-semibold text-navy text-[0.8125rem] leading-tight">
-                    Simple
-                  </p>
-                  <p className="text-[0.7rem] text-ink-500 mt-0.5 leading-snug">
-                    Moyenne arithmétique de toutes les périodes, à poids égaux.
-                  </p>
-                </div>
-              </label>
+              <RadioCard
+                name="formuleAnnuelle"
+                checked={formuleAnnuelle === 'standard'}
+                onChange={() => setFormuleAnnuelle('standard')}
+                label={
+                  <>
+                    Standard{' '}
+                    <span className="text-gold-dark text-[0.7rem] font-normal">(Bénin)</span>
+                  </>
+                }
+                description="La dernière période compte double. Ex. semestres : (S1 + S2×2) / 3."
+                containerClassName="flex-1"
+              />
+              <RadioCard
+                name="formuleAnnuelle"
+                checked={formuleAnnuelle === 'simple'}
+                onChange={() => setFormuleAnnuelle('simple')}
+                label="Simple"
+                description="Moyenne arithmétique de toutes les périodes, à poids égaux."
+                containerClassName="flex-1"
+              />
             </div>
           </div>
 
