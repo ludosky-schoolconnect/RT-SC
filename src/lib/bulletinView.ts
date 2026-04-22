@@ -44,8 +44,15 @@ export interface BulletinViewMatiereRow {
   coefficient: number
   /** moyenneMatiere * coefficient. null when abandonné. */
   totalPoints: number | null
-  /** Optional auto-generated short comment from the engine */
+  /** Short comment per subject. Populated by the bulletin enrichment
+   *  pipeline (bulletinEnrichment.ts) — threshold-based label like
+   *  "Très bien" / "Bien" / "Passable". Undefined when the engine
+   *  couldn't compute a moyenne for this row. */
   appreciation?: string
+  /** Student's rank within the class for THIS matière this period
+   *  (e.g. "3ème/28", "1er ex/28"). Populated by enrichment; undefined
+   *  on non-enriched views and when moyenne is missing. */
+  rang?: string
 }
 
 export interface BulletinPeriodView {

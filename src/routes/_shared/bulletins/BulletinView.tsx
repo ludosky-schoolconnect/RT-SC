@@ -15,11 +15,12 @@
  */
 
 import { motion } from 'framer-motion'
-import { Award, FileText } from 'lucide-react'
+import { Award, FileText, Users, ShieldAlert } from 'lucide-react'
 import type {
   BulletinAnnualView,
   BulletinPeriodView,
 } from '@/lib/bulletinView'
+import type { EnrichedBulletinPeriodView } from '@/lib/bulletinEnrichment'
 import { statutLabel } from '@/lib/statutLabel'
 import { cn } from '@/lib/cn'
 
@@ -116,6 +117,10 @@ function BulletinIdentity({
 }: {
   view: BulletinPeriodView | BulletinAnnualView
 }) {
+  // Enriched views carry the `effectif` count. Legacy views don't; the
+  // cell simply disappears in that case so annual + non-enriched period
+  // views stay visually unchanged.
+  const effectif = (view as EnrichedBulletinPeriodView).effectif
   return (
     <div className="px-5 py-4 bg-ink-50/40 border-b border-ink-100">
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-[0.78rem]">
@@ -126,6 +131,9 @@ function BulletinIdentity({
           label="Sexe"
           value={view.eleve.genre === 'F' ? 'Féminin' : 'Masculin'}
         />
+        {typeof effectif === 'number' && (
+          <IdentityRow label="Effectif" value={String(effectif)} />
+        )}
       </div>
     </div>
   )
@@ -160,6 +168,7 @@ function IdentityRow({
 // ─── Periode body (the matières table) ───────────────────────
 
 function PeriodeBody({ view }: { view: BulletinPeriodView }) {
+  const enriched = view as EnrichedBulletinPeriodView
   return (
     <div className="px-5 py-4">
       <div className="overflow-x-auto rounded border border-ink-200">
@@ -173,6 +182,8 @@ function PeriodeBody({ view }: { view: BulletinPeriodView }) {
               <th className="px-2 py-2 text-center w-14 bg-navy/90">Moy</th>
               <th className="px-2 py-2 text-center w-12">Coef</th>
               <th className="px-2 py-2 text-center w-16 bg-navy/90">Total</th>
+              <th className="px-2 py-2 text-center w-16">Rang</th>
+              <th className="px-2 py-2 text-left w-24">Appréciation</th>
             </tr>
           </thead>
           <tbody>
@@ -204,10 +215,22 @@ function PeriodeBody({ view }: { view: BulletinPeriodView }) {
               <td className="px-2 py-2 text-center font-mono text-navy tabular-nums text-[0.78rem]">
                 {view.totalPoints.toFixed(1)}
               </td>
+              {/* 2 empty cells for Rang + Appréciation columns */}
+              <td colSpan={2} />
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {/* Moyenne en lettres — shown under the table when enrichment is available */}
+      {enriched.moyenneGeneraleEnLettres && (
+        <p className="mt-2 text-[0.75rem] text-ink-500 italic leading-snug">
+          Moyenne générale en lettres :{' '}
+          <span className="text-navy font-semibold not-italic">
+            {enriched.moyenneGeneraleEnLettres}
+          </span>
+        </p>
+      )}
 
       {/* Verdict + Rang strip */}
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -215,6 +238,18 @@ function PeriodeBody({ view }: { view: BulletinPeriodView }) {
         <VerdictTile label="Rang" value={view.rang ?? '—'} tone="navy" />
         <VerdictTile label="Mention" value={view.mention} tone={mentionTone(view.mention)} />
       </div>
+
+      {/* Class stats + Discipline — only shown when enrichment is present */}
+      {(enriched.classStats || enriched.disciplineStats) && (
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {enriched.classStats && (
+            <ClassStatsCard stats={enriched.classStats} />
+          )}
+          {enriched.disciplineStats && (
+            <DisciplineCard stats={enriched.disciplineStats} />
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -230,7 +265,7 @@ function MatiereRow({
     return (
       <tr className={cn('border-t border-ink-100', alt ? 'bg-ink-50/30' : 'bg-white')}>
         <td className="px-2 py-1.5 text-ink-700 font-semibold">{row.matiere}</td>
-        <td colSpan={6} className="px-2 py-1.5 text-center text-warning text-[0.7rem] italic">
+        <td colSpan={8} className="px-2 py-1.5 text-center text-warning text-[0.7rem] italic">
           Élève absent (matière non comptabilisée)
         </td>
       </tr>
@@ -273,6 +308,14 @@ function MatiereRow({
       <td className="px-2 py-1.5 text-center font-mono tabular-nums text-navy">
         {row.totalPoints !== null ? row.totalPoints.toFixed(1) : '—'}
       </td>
+      {/* Rang per matière — only present on enriched views */}
+      <td className="px-2 py-1.5 text-center font-mono tabular-nums text-[0.7rem] text-ink-600">
+        {row.rang ?? '—'}
+      </td>
+      {/* Appréciation */}
+      <td className="px-2 py-1.5 text-left text-[0.7rem] text-ink-700 italic">
+        {row.appreciation ?? '—'}
+      </td>
     </tr>
   )
 }
@@ -309,7 +352,138 @@ function ConduiteRow({ view }: { view: BulletinPeriodView }) {
       <td className="px-2 py-1.5 text-center font-mono tabular-nums text-navy">
         {total.toFixed(1)}
       </td>
+      {/* 2 empty cells for Rang + Appréciation columns */}
+      <td colSpan={2} />
     </tr>
+  )
+}
+
+// ─── Class stats + Discipline cards (v2) ─────────────────────
+
+function ClassStatsCard({
+  stats,
+}: {
+  stats: NonNullable<EnrichedBulletinPeriodView['classStats']>
+}) {
+  return (
+    <section className="rounded-lg border-[1.5px] border-ink-200 bg-white px-4 py-3">
+      <header className="flex items-center gap-2 pb-2 border-b border-ink-100">
+        <Users className="h-4 w-4 text-navy shrink-0" aria-hidden />
+        <h3 className="text-[0.7rem] font-bold uppercase tracking-widest text-ink-500">
+          Statistiques de la classe
+        </h3>
+      </header>
+      <dl className="mt-2 space-y-1.5 text-[0.78rem]">
+        <StatLine
+          label="Moyenne la plus élevée"
+          value={stats.moyenneMax.toFixed(2)}
+          tone="success"
+        />
+        <StatLine
+          label="Moyenne la plus faible"
+          value={stats.moyenneMin.toFixed(2)}
+          tone="danger"
+        />
+        <StatLine
+          label="Moyenne de la classe"
+          value={stats.moyenneClasse.toFixed(2)}
+          tone="navy"
+        />
+      </dl>
+    </section>
+  )
+}
+
+function DisciplineCard({
+  stats,
+}: {
+  stats: NonNullable<EnrichedBulletinPeriodView['disciplineStats']>
+}) {
+  // Don't render the card if literally everything is zero — keeps the
+  // bulletin clean for well-behaved students.
+  const allZero =
+    stats.retards === 0 &&
+    stats.absences === 0 &&
+    stats.heuresColle === 0 &&
+    stats.avertissements === 0 &&
+    stats.exclusions === 0
+  return (
+    <section className="rounded-lg border-[1.5px] border-ink-200 bg-white px-4 py-3">
+      <header className="flex items-center gap-2 pb-2 border-b border-ink-100">
+        <ShieldAlert className="h-4 w-4 text-navy shrink-0" aria-hidden />
+        <h3 className="text-[0.7rem] font-bold uppercase tracking-widest text-ink-500">
+          Discipline
+        </h3>
+      </header>
+      {allZero ? (
+        <p className="mt-2 text-[0.78rem] text-success italic">
+          Aucun incident signalé sur la période.
+        </p>
+      ) : (
+        <dl className="mt-2 space-y-1.5 text-[0.78rem]">
+          <StatLine
+            label="Retards"
+            value={String(stats.retards)}
+            tone={stats.retards > 0 ? 'warning' : 'ink'}
+          />
+          <StatLine
+            label="Absences"
+            value={String(stats.absences)}
+            tone={stats.absences > 0 ? 'warning' : 'ink'}
+          />
+          <StatLine
+            label="Heures de colle"
+            value={`${stats.heuresColle} h`}
+            tone={stats.heuresColle > 0 ? 'warning' : 'ink'}
+          />
+          {stats.avertissements > 0 && (
+            <StatLine
+              label="Avertissements"
+              value={String(stats.avertissements)}
+              tone="danger"
+            />
+          )}
+          {stats.exclusions > 0 && (
+            <StatLine
+              label="Exclusions"
+              value={String(stats.exclusions)}
+              tone="danger"
+            />
+          )}
+        </dl>
+      )}
+    </section>
+  )
+}
+
+function StatLine({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string
+  tone: 'success' | 'danger' | 'warning' | 'navy' | 'ink'
+}) {
+  const toneClasses = {
+    success: 'text-success',
+    danger: 'text-danger',
+    warning: 'text-warning',
+    navy: 'text-navy',
+    ink: 'text-ink-700',
+  } as const
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-ink-500">{label}</dt>
+      <dd
+        className={cn(
+          'font-mono tabular-nums font-semibold',
+          toneClasses[tone]
+        )}
+      >
+        {value}
+      </dd>
+    </div>
   )
 }
 

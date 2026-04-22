@@ -2,23 +2,51 @@
  * RT-SC · useBulletinView — fetch + assemble a BulletinView.
  *
  * Two variants:
- *   - usePeriodBulletinView({ classeId, eleveId, periode })
- *   - useAnnualBulletinView({ classeId, eleveId })
+ *   - usePeriodBulletinView({ classeId, eleveId, periode })  → EnrichedBulletinPeriodView
+ *   - useAnnualBulletinView({ classeId, eleveId })           → BulletinAnnualView
  *
  * Both return a tightly-shaped view ready to feed into <BulletinView />.
  *
- * Cached via TanStack Query. The data is moderately large (one Bulletin
- * doc + N notes for period view, all bulletins for annual) so 5-min stale.
+ * Period variant (v2 enriched):
+ *   The period hook composes three fetches:
+ *     1. Per-student base view (bulletin + notes + classe + élève + coefficients)
+ *     2. Class-wide enrichment data (classmates' bulletins + notes + presences)
+ *     3. Per-student discipline source (this élève's absences + colles +
+ *        civismeHistory, period-bounded client-side)
+ *   Then calls `enrichBulletinPeriodView()` to merge everything into an
+ *   EnrichedBulletinPeriodView with class stats, per-matière rangs,
+ *   discipline counts, moyenne-en-lettres, and per-matière appreciation.
+ *
+ *   The class-wide data (step 2) lives in its own hook
+ *   `useClassPeriodEnrichment` so every student in the same class × period
+ *   shares ONE fetch — typical admin browsing stays well within Blaze
+ *   free tier.
+ *
+ * Annual variant: unchanged. Annual bulletin enrichment is out of scope
+ * for Bulletin v2 phase 1.
+ *
+ * Cached via TanStack Query. 5-min stale.
  */
 
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+} from 'firebase/firestore'
 import { db } from '@/firebase'
 import {
+  absencesCol,
   bulletinsCol,
-  notesCol,
+  civismeHistoryCol,
   classesCol,
+  collesCol,
   elevesCol,
+  notesCol,
 } from '@/lib/firestore-keys'
 import {
   assembleBulletinAnnualView,
@@ -27,10 +55,15 @@ import {
   type BulletinPeriodView,
 } from '@/lib/bulletinView'
 import {
+  enrichBulletinPeriodView,
+  type EnrichedBulletinPeriodView,
+} from '@/lib/bulletinEnrichment'
+import {
   coefficientsTargetId,
 } from '@/lib/benin'
 import { useEcoleConfig } from './useEcoleConfig'
 import { useBulletinConfig } from './useBulletinConfig'
+import { useClassPeriodEnrichment } from './useClassPeriodEnrichment'
 import type {
   Bulletin,
   Classe,
@@ -41,7 +74,7 @@ import type {
 
 const FIVE_MIN = 5 * 60_000
 
-// ─── Period variant ─────────────────────────────────────────
+// ─── Period variant (v2 enriched) ───────────────────────────
 
 export function usePeriodBulletinView(args: {
   classeId: string | undefined
@@ -52,11 +85,20 @@ export function usePeriodBulletinView(args: {
   const { data: ecoleConfig } = useEcoleConfig()
   const { data: bulletinConfig } = useBulletinConfig()
 
-  // We need the classe to know niveau/série for the coefficients lookup
-  const enabled = !!classeId && !!eleveId && !!periode && !!ecoleConfig && !!bulletinConfig
+  // Shared class-wide fetch (one per class×periode, dedup'd across students)
+  const { data: classEnrichment } = useClassPeriodEnrichment({ classeId, periode })
 
-  return useQuery<BulletinPeriodView | null>({
-    queryKey: ['bulletin-view-period', classeId, eleveId, periode],
+  // ─ Per-student base view + per-student discipline source ─
+  const enabled =
+    !!classeId && !!eleveId && !!periode && !!ecoleConfig && !!bulletinConfig
+
+  const baseQuery = useQuery<{
+    baseView: BulletinPeriodView
+    absences: { date: unknown; heureDebut?: string }[]
+    colles: { heures: number }[]
+    civismeHistory: { raison?: string; motif?: string; date?: unknown }[]
+  } | null>({
+    queryKey: ['bulletin-view-period-base', classeId, eleveId, periode],
     enabled,
     staleTime: FIVE_MIN,
     queryFn: async () => {
@@ -95,7 +137,25 @@ export function usePeriodBulletinView(args: {
       const coefSnap = await getDoc(doc(db, `ecole/coefficients_${targetId}`))
       const coefficients = coefSnap.exists() ? (coefSnap.data() as Record<string, number>) : {}
 
-      return assembleBulletinPeriodView({
+      // 6. Per-student discipline source: absences, colles, civismeHistory
+      //    for this period. Fetched in parallel.
+      const [absencesSnap, collesSnap, civismeSnap] = await Promise.all([
+        getDocs(collection(db, absencesCol(classeId, eleveId))),
+        getDocs(
+          query(
+            collection(db, collesCol(classeId, eleveId)),
+            where('periode', '==', periode)
+          )
+        ),
+        getDocs(collection(db, civismeHistoryCol(classeId, eleveId))),
+      ])
+      const absences = absencesSnap.docs.map((d) => d.data() as { date: unknown; heureDebut?: string })
+      const colles = collesSnap.docs.map((d) => d.data() as { heures: number })
+      const civismeHistory = civismeSnap.docs.map(
+        (d) => d.data() as { raison?: string; motif?: string; date?: unknown }
+      )
+
+      const baseView = assembleBulletinPeriodView({
         bulletin,
         notes,
         coefficients,
@@ -104,8 +164,55 @@ export function usePeriodBulletinView(args: {
         bulletinConfig,
         ecoleConfig,
       })
+
+      return { baseView, absences, colles, civismeHistory }
     },
   })
+
+  // ─ Merge base + class-wide via the enricher ─
+  // Derived synchronously in useMemo so the return type matches the
+  // caller's expectations without an extra query layer.
+  const enriched: EnrichedBulletinPeriodView | null = useMemo(() => {
+    if (!baseQuery.data) return null
+    const { baseView, absences, colles, civismeHistory } = baseQuery.data
+
+    // If class enrichment hasn't loaded yet (or failed), return the base
+    // view unchanged. The enriched fields stay undefined — UI should
+    // treat them as "not yet available" and render defensively.
+    if (!classEnrichment || !eleveId || !periode) {
+      return baseView as EnrichedBulletinPeriodView
+    }
+
+    return enrichBulletinPeriodView({
+      baseView,
+      eleveId,
+      periode,
+      classmates: classEnrichment.classmates,
+      effectif: classEnrichment.effectif,
+      periodeDates: bulletinConfig?.periodeDates,
+      disciplineSource: {
+        absences: absences as { date: { toDate?: () => Date } | Date | undefined; heureDebut?: string }[],
+        presences: classEnrichment.presences,
+        colles,
+        civismeHistory: civismeHistory as {
+          raison?: string
+          motif?: string
+          date?: { toDate?: () => Date } | Date
+        }[],
+      },
+    })
+  }, [
+    baseQuery.data,
+    classEnrichment,
+    eleveId,
+    periode,
+    bulletinConfig?.periodeDates,
+  ])
+
+  return {
+    ...baseQuery,
+    data: enriched,
+  }
 }
 
 // ─── Annual variant ─────────────────────────────────────────
