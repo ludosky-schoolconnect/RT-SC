@@ -1,16 +1,23 @@
 /**
  * RT-SC · User settings store.
  *
- * Client-side preferences that apply across all roles and persist
- * to localStorage. Keys live in a single namespaced object so we
- * can migrate the shape later without stomping unrelated keys.
+ * Client-side preferences that apply across all roles and persist to
+ * localStorage. Keys live in a single namespaced object so we can
+ * migrate the shape later without stomping unrelated keys.
  *
  * Currently live:
  *   - fontSize — accessibility (small / normal / large)
+ *   - themeMode — light / dark / sepia / auto. The store and switcher
+ *     are wired (the choice is saved + applied to the <html> element
+ *     as data-theme), but the actual color palette migration to CSS
+ *     variables is a separate, larger piece of work. Until that lands,
+ *     swapping the theme will set the attribute but the visible UI
+ *     stays in the existing palette. This unlocks the UX upfront so
+ *     the rest of the migration can land without re-shipping the
+ *     switcher.
  *
- * Deferred (visible in the Settings UI but not functional yet):
- *   - themeMode — light / dark / auto (dark mode is deferred)
- *   - language — fr / en (i18n is deferred)
+ * Removed: language (i18n deferred — Béninois clients are
+ * French-speaking, browser auto-translate handles edge cases).
  *
  * Why Zustand, not React Context: settings changes should trigger
  * re-renders only where used. Zustand selectors keep this cheap.
@@ -19,19 +26,16 @@
 import { create } from 'zustand'
 
 export type FontSize = 'small' | 'normal' | 'large'
-export type ThemeMode = 'light' | 'dark' | 'auto'
-export type Language = 'fr' | 'en'
+export type ThemeMode = 'light' | 'dark' | 'sepia' | 'auto'
 
 export interface UserSettings {
   fontSize: FontSize
   themeMode: ThemeMode
-  language: Language
 }
 
 const DEFAULTS: UserSettings = {
   fontSize: 'normal',
   themeMode: 'light',
-  language: 'fr',
 }
 
 const STORAGE_KEY = 'rt-sc:user-settings:v1'
@@ -42,11 +46,11 @@ function load(): UserSettings {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return DEFAULTS
     const parsed = JSON.parse(raw) as Partial<UserSettings>
-    // Shallow merge — guards against old keys / missing fields
+    // Shallow merge — guards against old keys / missing fields.
+    // Note: legacy `language` field is silently dropped on next save.
     return {
       fontSize: parsed.fontSize ?? DEFAULTS.fontSize,
       themeMode: parsed.themeMode ?? DEFAULTS.themeMode,
-      language: parsed.language ?? DEFAULTS.language,
     }
   } catch {
     return DEFAULTS
@@ -65,7 +69,6 @@ function save(settings: UserSettings) {
 interface SettingsState extends UserSettings {
   setFontSize: (v: FontSize) => void
   setThemeMode: (v: ThemeMode) => void
-  setLanguage: (v: Language) => void
   reset: () => void
 }
 
@@ -74,34 +77,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setFontSize: (fontSize) => {
     set({ fontSize })
     save({ ...get(), fontSize })
+    applyFontSize(fontSize)
   },
   setThemeMode: (themeMode) => {
     set({ themeMode })
     save({ ...get(), themeMode })
-  },
-  setLanguage: (language) => {
-    set({ language })
-    save({ ...get(), language })
+    applyTheme(themeMode)
   },
   reset: () => {
     set(DEFAULTS)
     save(DEFAULTS)
+    applyFontSize(DEFAULTS.fontSize)
+    applyTheme(DEFAULTS.themeMode)
   },
 }))
 
 // ─── Font size application ──────────────────────────────────
 
-/**
- * Applies the current font size to the document root by setting
- * a `data-font-size` attribute. Tailwind utility classes that read
- * this attribute can scale accordingly. The attribute approach
- * beats mutating the root font-size directly because it lets us
- * keep absolute sizes for things that shouldn't scale (tiny icons,
- * small metadata labels).
- *
- * For the global default, we set the HTML element's base font-size
- * via a CSS variable the app reads in base.css.
- */
 export const FONT_SIZE_PX: Record<FontSize, number> = {
   small: 15,
   normal: 16,
@@ -115,4 +107,57 @@ export function applyFontSize(size: FontSize) {
     `${FONT_SIZE_PX[size]}px`
   )
   document.documentElement.setAttribute('data-font-size', size)
+}
+
+// ─── Theme application ──────────────────────────────────────
+
+/**
+ * Resolves 'auto' → the OS preference at call time. Pure function for
+ * testability; the actual media-query subscription lives in initTheme().
+ */
+function resolveTheme(mode: ThemeMode): 'light' | 'dark' | 'sepia' {
+  if (mode === 'auto') {
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-color-scheme: dark)').matches
+    ) {
+      return 'dark'
+    }
+    return 'light'
+  }
+  return mode
+}
+
+/**
+ * Writes the resolved theme to <html data-theme="...">. The CSS layer
+ * (to be added in the theme-migration session) will read this attribute
+ * to swap CSS variables and recolor the entire app. Until that lands,
+ * setting the attribute is a no-op visually, but the choice persists
+ * so the user doesn't have to re-pick after the migration ships.
+ */
+export function applyTheme(mode: ThemeMode) {
+  if (typeof document === 'undefined') return
+  const resolved = resolveTheme(mode)
+  document.documentElement.setAttribute('data-theme', resolved)
+  document.documentElement.setAttribute('data-theme-mode', mode)
+}
+
+/**
+ * Boot-time theme initialisation. Call once from main.tsx after the
+ * store is hydrated. Also subscribes to OS color-scheme changes when
+ * the user has selected 'auto', so the app re-themes live.
+ */
+export function initTheme() {
+  if (typeof window === 'undefined') return
+
+  const current = useSettingsStore.getState().themeMode
+  applyTheme(current)
+
+  // Live-react to OS scheme changes ONLY when the user picked 'auto'
+  const mql = window.matchMedia('(prefers-color-scheme: dark)')
+  const onChange = () => {
+    const mode = useSettingsStore.getState().themeMode
+    if (mode === 'auto') applyTheme('auto')
+  }
+  mql.addEventListener?.('change', onChange)
 }

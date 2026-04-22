@@ -4,17 +4,17 @@
  * User-facing preferences modal accessible from the header of every
  * authenticated dashboard (admin / prof / caissier / élève / parent).
  *
- * Live features (Phase 1):
+ * Live features:
  *   - Font size — small / normal / large. Applies a CSS root
  *     font-size so every rem-based size in the app scales.
- *
- * Coming-soon placeholders (Phase 2+):
- *   - Theme mode (light / dark / auto) — dark mode is deferred
- *   - Language (fr / en) — full i18n is deferred
- *
- * All preferences persist to localStorage via useSettingsStore.
+ *   - Theme mode — light / dark / sepia / auto. The choice is stored
+ *     and applied to <html data-theme="..."> so the rest of the app's
+ *     CSS layer can pick it up. The visible recoloring lands in a
+ *     follow-up migration; this modal already commits the user's
+ *     choice so it sticks once the styles ship.
  */
 
+import { useId } from 'react'
 import {
   Modal,
   ModalHeader,
@@ -24,10 +24,17 @@ import {
 import {
   Type,
   Palette,
-  Languages,
+  Sun,
+  Moon,
+  BookOpen,
+  Monitor,
   Info,
 } from 'lucide-react'
-import { useSettingsStore, type FontSize } from '@/stores/settings'
+import {
+  useSettingsStore,
+  type FontSize,
+  type ThemeMode,
+} from '@/stores/settings'
 import { cn } from '@/lib/cn'
 
 interface Props {
@@ -39,7 +46,7 @@ export function SettingsModal({ open, onClose }: Props) {
   const fontSize = useSettingsStore((s) => s.fontSize)
   const setFontSize = useSettingsStore((s) => s.setFontSize)
   const themeMode = useSettingsStore((s) => s.themeMode)
-  const language = useSettingsStore((s) => s.language)
+  const setThemeMode = useSettingsStore((s) => s.setThemeMode)
 
   return (
     <Modal open={open} onClose={onClose} size="md">
@@ -47,8 +54,8 @@ export function SettingsModal({ open, onClose }: Props) {
         <ModalTitle>Préférences</ModalTitle>
       </ModalHeader>
       <ModalBody>
-        <div className="space-y-5">
-          {/* Font size (live) */}
+        <div className="space-y-6">
+          {/* Font size */}
           <SettingGroup
             icon={<Type className="h-4 w-4" aria-hidden />}
             title="Taille du texte"
@@ -66,49 +73,21 @@ export function SettingsModal({ open, onClose }: Props) {
             <FontPreview />
           </SettingGroup>
 
-          {/* Theme (coming soon) */}
+          {/* Theme */}
           <SettingGroup
             icon={<Palette className="h-4 w-4" aria-hidden />}
             title="Thème"
-            description="Choisir l'apparence claire ou sombre."
-            comingSoon
+            description="Apparence générale de l'application. La refonte visuelle complète est en cours — votre choix sera appliqué dès qu'elle sera disponible."
           >
-            <SegmentedControl
-              value={themeMode}
-              onChange={() => {}}
-              disabled
-              options={[
-                { value: 'light', label: 'Clair' },
-                { value: 'dark', label: 'Sombre' },
-                { value: 'auto', label: 'Auto' },
-              ]}
-            />
-          </SettingGroup>
-
-          {/* Language (coming soon) */}
-          <SettingGroup
-            icon={<Languages className="h-4 w-4" aria-hidden />}
-            title="Langue"
-            description="Français / English."
-            comingSoon
-          >
-            <SegmentedControl
-              value={language}
-              onChange={() => {}}
-              disabled
-              options={[
-                { value: 'fr', label: 'Français' },
-                { value: 'en', label: 'English' },
-              ]}
-            />
+            <ThemeChoiceGrid value={themeMode} onChange={setThemeMode} />
           </SettingGroup>
 
           {/* Footer info */}
           <div className="rounded-lg bg-info-bg/40 border border-navy/10 p-3 flex items-start gap-2">
             <Info className="h-4 w-4 text-navy shrink-0 mt-0.5" aria-hidden />
             <p className="text-[0.76rem] text-ink-700 leading-snug">
-              Vos préférences sont enregistrées sur cet appareil. Elles
-              sont réappliquées à la prochaine connexion.
+              Vos préférences sont enregistrées sur cet appareil et
+              réappliquées à la prochaine connexion.
             </p>
           </div>
         </div>
@@ -123,32 +102,23 @@ function SettingGroup({
   icon,
   title,
   description,
-  comingSoon,
   children,
 }: {
   icon: React.ReactNode
   title: string
   description: string
-  comingSoon?: boolean
   children: React.ReactNode
 }) {
   return (
-    <div className={cn(comingSoon && 'opacity-60')}>
-      <div className="flex items-start gap-2 mb-2">
+    <div>
+      <div className="flex items-start gap-2 mb-2.5">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-navy/10 text-navy ring-1 ring-navy/15 mt-0.5">
           {icon}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <p className="font-display text-[0.92rem] font-bold text-navy leading-tight">
-              {title}
-            </p>
-            {comingSoon && (
-              <span className="inline-flex items-center rounded bg-ink-100 px-1.5 py-0.5 text-[0.62rem] font-bold text-ink-500 uppercase tracking-wider">
-                Bientôt
-              </span>
-            )}
-          </div>
+          <p className="font-display text-[0.92rem] font-bold text-navy leading-tight">
+            {title}
+          </p>
           <p className="text-[0.76rem] text-ink-500 mt-0.5 leading-snug">
             {description}
           </p>
@@ -159,27 +129,22 @@ function SettingGroup({
   )
 }
 
-// ─── Segmented control ──────────────────────────────────────
+// ─── Segmented control (font size) ──────────────────────────
 
 interface SegmentedControlProps<T extends string> {
   value: T
   onChange: (v: T) => void
   options: { value: T; label: string }[]
-  disabled?: boolean
 }
 
 function SegmentedControl<T extends string>({
   value,
   onChange,
   options,
-  disabled,
 }: SegmentedControlProps<T>) {
   return (
     <div
-      className={cn(
-        'inline-flex items-center gap-1 rounded-lg bg-ink-100/60 p-1',
-        disabled && 'pointer-events-none'
-      )}
+      className="inline-flex items-center gap-1 rounded-lg bg-ink-100/60 p-1"
       role="radiogroup"
     >
       {options.map((opt) => {
@@ -190,7 +155,6 @@ function SegmentedControl<T extends string>({
             type="button"
             role="radio"
             aria-checked={active}
-            disabled={disabled}
             onClick={() => onChange(opt.value)}
             className={cn(
               'rounded-md px-3 py-1.5 text-[0.82rem] font-bold transition-all min-h-[38px]',
@@ -200,6 +164,127 @@ function SegmentedControl<T extends string>({
             )}
           >
             {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Theme choice grid ──────────────────────────────────────
+// Larger tiles — themes deserve a more visual picker than a
+// segmented strip. Each tile shows its name + a tiny preview swatch.
+
+const THEME_OPTIONS: ReadonlyArray<{
+  value: ThemeMode
+  label: string
+  description: string
+  icon: React.ReactNode
+  swatchClass: string
+}> = [
+  {
+    value: 'light',
+    label: 'Clair',
+    description: 'Apparence par défaut',
+    icon: <Sun className="h-4 w-4" aria-hidden />,
+    swatchClass: 'bg-white border border-ink-200',
+  },
+  {
+    value: 'dark',
+    label: 'Sombre',
+    description: 'Pour la nuit',
+    icon: <Moon className="h-4 w-4" aria-hidden />,
+    swatchClass: 'bg-navy-dark',
+  },
+  {
+    value: 'sepia',
+    label: 'Sépia',
+    description: 'Lecture confortable',
+    icon: <BookOpen className="h-4 w-4" aria-hidden />,
+    swatchClass: 'bg-[#F4ECD8] border border-[#E5D8B8]',
+  },
+  {
+    value: 'auto',
+    label: 'Auto',
+    description: 'Selon le système',
+    icon: <Monitor className="h-4 w-4" aria-hidden />,
+    swatchClass: 'bg-gradient-to-br from-white to-navy-dark',
+  },
+]
+
+function ThemeChoiceGrid({
+  value,
+  onChange,
+}: {
+  value: ThemeMode
+  onChange: (v: ThemeMode) => void
+}) {
+  const groupId = useId()
+  return (
+    <div
+      className="grid grid-cols-2 gap-2"
+      role="radiogroup"
+      aria-labelledby={groupId}
+    >
+      {THEME_OPTIONS.map((opt) => {
+        const active = opt.value === value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'group relative flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40',
+              active
+                ? 'border-navy bg-navy/5 shadow-sm'
+                : 'border-ink-200 bg-white hover:border-navy/40 hover:bg-ink-50/40'
+            )}
+          >
+            {/* Swatch */}
+            <div
+              className={cn(
+                'shrink-0 w-9 h-9 rounded-md ring-1 ring-ink-200/50 flex items-center justify-center',
+                opt.swatchClass
+              )}
+              aria-hidden
+            >
+              <span
+                className={cn(
+                  'opacity-80',
+                  opt.value === 'dark'
+                    ? 'text-white'
+                    : opt.value === 'sepia'
+                      ? 'text-[#5C4A2C]'
+                      : 'text-ink-600'
+                )}
+              >
+                {opt.icon}
+              </span>
+            </div>
+            {/* Label */}
+            <div className="flex-1 min-w-0">
+              <p
+                className={cn(
+                  'font-bold text-[0.85rem] leading-tight',
+                  active ? 'text-navy' : 'text-ink-700'
+                )}
+              >
+                {opt.label}
+              </p>
+              <p className="text-[0.7rem] text-ink-500 leading-snug truncate">
+                {opt.description}
+              </p>
+            </div>
+            {/* Check indicator */}
+            {active && (
+              <span
+                aria-hidden
+                className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-navy"
+              />
+            )}
           </button>
         )
       })}
