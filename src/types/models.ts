@@ -650,6 +650,16 @@ export interface InscriptionCategorie {
 
 export interface SettingsInscription {
   /**
+   * Master open/close toggle for the public pre-inscription form.
+   * When false, the public /inscription page shows a "closed" notice
+   * and Firestore rules reject new /pre_inscriptions/* creates.
+   *
+   * Default: undefined → treated as OPEN (preserves behavior for
+   * already-deployed schools that haven't seen this field yet).
+   * Admin must explicitly flip to false to close.
+   */
+  preinscriptionsOuvertes?: boolean
+  /**
    * Categories. If empty, the public form falls back to documentsSimple
    * (no category picker shown).
    */

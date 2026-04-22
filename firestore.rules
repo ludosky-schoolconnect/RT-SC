@@ -26,6 +26,17 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/classes/$(classeId)/eleves/$(eleveId)).data.active_session_uid == request.auth.uid;
     }
 
+    function preinscriptionsOpen() {
+      // Default OPEN when the field is missing (backward compat).
+      // Explicit `false` is the ONLY way to close.
+      //
+      // If /settings_inscription/config does not exist at all (brand-new
+      // school before admin touches settings), treat as open too.
+      let cfgPath = /databases/$(database)/documents/settings_inscription/config;
+      return !exists(cfgPath)
+        || get(cfgPath).data.get('preinscriptionsOuvertes', true) == true;
+    }
+
     function isParentOf(classeId, eleveId) {
       return request.auth != null
         && get(/databases/$(database)/documents/classes/$(classeId)/eleves/$(eleveId)).data.active_parent_session_uid == request.auth.uid;
@@ -82,7 +93,11 @@ service cloud.firestore {
     // ══════════════════════════════════════════════════════════
 
     match /pre_inscriptions/{piId} {
-      allow create: if true;
+      // Anyone can create a pre-inscription, BUT only when the admin
+      // has not closed the gate. Server-enforced — F12 bypass is useless
+      // because Firestore evaluates this rule on write, not on render.
+      allow create: if preinscriptionsOpen();
+
       allow read: if true;
 
       allow update: if isStaff() || (
@@ -95,7 +110,10 @@ service cloud.firestore {
       allow delete: if isStaff();
 
       match /documents/{docId} {
-        allow create: if true;
+        // Uploaded documents — same gate as the parent doc. Without
+        // this, an attacker could skip the parent create and still
+        // spam document subcollections with garbage payloads.
+        allow create: if preinscriptionsOpen();
         allow read, write: if isStaff();
       }
     }

@@ -27,6 +27,9 @@ import {
 const TEN_MIN = 10 * 60_000
 
 const DEFAULT_SETTINGS: SettingsInscription = {
+  // Default OPEN — preserves behavior for schools that haven't seen
+  // this feature yet. Admin can flip to false to close.
+  preinscriptionsOuvertes: true,
   categories: [],
   documentsSimple: [{ nom: 'Acte de naissance', requis: true }],
   materiel: [],
@@ -96,6 +99,7 @@ export function useSettingsInscription() {
 
       if (hasNew) {
         return {
+          preinscriptionsOuvertes: data.preinscriptionsOuvertes ?? true,
           categories: data.categories ?? [],
           documentsSimple: data.documentsSimple ?? [],
           materiel: data.materiel ?? [],
@@ -111,6 +115,7 @@ export function useSettingsInscription() {
       if (data.documents && data.documents.length > 0) {
         const migrated = migrateLegacyDocuments(data.documents)
         return {
+          preinscriptionsOuvertes: data.preinscriptionsOuvertes ?? true,
           categories: migrated.categories,
           documentsSimple: migrated.documentsSimple,
           materiel: data.materiel ?? [],
@@ -125,6 +130,7 @@ export function useSettingsInscription() {
       // Truly empty doc — return defaults
       return {
         ...DEFAULT_SETTINGS,
+        preinscriptionsOuvertes: data.preinscriptionsOuvertes ?? true,
         materiel: data.materiel ?? [],
         rendezVousPlacesParJour:
           data.rendezVousPlacesParJour ?? DEFAULT_PLACES_PAR_JOUR,
@@ -157,7 +163,34 @@ export function useUpdateSettingsInscription() {
         // Explicit null clears the legacy field
         documents: null,
       }
+      // Only include preinscriptionsOuvertes if the caller provided it;
+      // omitting it preserves the existing server value (critical so
+      // pressing "Save" on the docs editor doesn't reset the toggle).
+      if (patch.preinscriptionsOuvertes !== undefined) {
+        payload.preinscriptionsOuvertes = patch.preinscriptionsOuvertes
+      }
       await setDoc(doc(db, settingsInscriptionDoc()), payload, { merge: true })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings-inscription'] })
+    },
+  })
+}
+
+/**
+ * Dedicated toggle mutation — writes ONLY the preinscriptionsOuvertes
+ * field so the admin can flip the toggle instantly without having
+ * the rest of their unsaved edits in the docs editor get written.
+ */
+export function useTogglePreinscriptions() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (ouvertes: boolean) => {
+      await setDoc(
+        doc(db, settingsInscriptionDoc()),
+        { preinscriptionsOuvertes: ouvertes },
+        { merge: true }
+      )
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['settings-inscription'] })

@@ -16,6 +16,7 @@ import { CoefficientsEditorCard } from './CoefficientsEditorCard'
 import { DangerZoneCard } from './DangerZoneCard'
 import { YearArchiveSection } from './archive/YearArchiveSection'
 import { SettingsInscriptionCard } from '../inscriptions/SettingsInscriptionCard'
+import { PreinscriptionToggleCard } from '../inscriptions/PreinscriptionToggleCard'
 import { FinancesConfigCard } from '../finances/FinancesConfigCard'
 
 export function AnneeTab() {
@@ -61,7 +62,10 @@ export function AnneeTab() {
           <p className="text-[0.7rem] font-bold uppercase tracking-widest text-ink-400 mb-2 px-1">
             Pré-inscriptions
           </p>
-          <SettingsInscriptionCard />
+          <div className="space-y-4">
+            <PreinscriptionToggleCard />
+            <SettingsInscriptionCard />
+          </div>
         </div>
 
         {/* 5. Zone dangereuse */}
