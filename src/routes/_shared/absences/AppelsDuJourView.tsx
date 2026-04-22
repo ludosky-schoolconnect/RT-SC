@@ -32,8 +32,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { ExportMenu } from '@/components/ui/ExportMenu'
 
 import { useSchoolMarkedAbsences } from '@/hooks/useSchoolMarkedAbsences'
-import { useEleves } from '@/hooks/useEleves'
-import { useClasses, useClasseEleveCount } from '@/hooks/useClasses'
+import { useClasseEleveCount } from '@/hooks/useClasses'
 import { useDeleteMarkedAbsence } from '@/hooks/useAbsenceManageMutations'
 import { useToast } from '@/stores/toast'
 import { useConfirm } from '@/stores/confirm'
@@ -231,7 +230,7 @@ function ClasseCard({
   canManage,
 }: {
   classe: Classe
-  matieresMap: Map<string, ReturnType<typeof useSchoolMarkedAbsences>['data'] extends (infer T)[] | undefined ? T : never[]>
+  matieresMap: Map<string, import('@/hooks/useSchoolMarkedAbsences').SchoolMarkedAbsence[]>
   canManage: boolean
 }) {
   const { data: totalEleves = 0 } = useClasseEleveCount(classe.id)
@@ -270,7 +269,7 @@ function ClasseCard({
           <MatiereRow
             key={matiereSlug}
             matiereSlug={matiereSlug}
-            entries={entries as import('@/hooks/useSchoolMarkedAbsences').SchoolMarkedAbsence[]}
+            entries={entries}
             totalEleves={totalEleves}
             classeId={classe.id}
             canManage={canManage}

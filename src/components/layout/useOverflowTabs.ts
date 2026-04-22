@@ -25,7 +25,7 @@
  * overflow + show Plus (which might be a wash visually but is correct).
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 export interface OverflowResult {
   visibleCount: number

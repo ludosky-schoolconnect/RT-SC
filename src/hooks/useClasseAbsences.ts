@@ -26,7 +26,7 @@ import { useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { collection, onSnapshot, query, Timestamp } from 'firebase/firestore'
 import { db } from '@/firebase'
-import { absencesCol, presencesCol } from '@/lib/firestore-keys'
+import { presencesCol } from '@/lib/firestore-keys'
 import { todayISO } from '@/hooks/usePresenceMutations'
 import type {
   Absence,

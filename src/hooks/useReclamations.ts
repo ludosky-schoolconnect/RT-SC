@@ -38,7 +38,6 @@ import { useEffect } from 'react'
 import {
   addDoc,
   collection,
-  collectionGroup,
   doc,
   getDoc,
   onSnapshot,

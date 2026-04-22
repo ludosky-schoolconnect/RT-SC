@@ -20,8 +20,6 @@ import {
   CheckCircle2,
   XCircle,
   Users,
-  Trash2,
-  GraduationCap,
   AlertTriangle,
   Archive,
   Award,

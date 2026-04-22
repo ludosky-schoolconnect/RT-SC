@@ -200,17 +200,17 @@ function drawRankingTable(
       // Color top 3 rank cells
       if (hook.column.index === 0 && hook.section === 'body') {
         const rank = hook.row.index + 1
-        if (rank === 1) hook.cell.styles.fillColor = GOLD as unknown as number[]
+        if (rank === 1) hook.cell.styles.fillColor = GOLD
         else if (rank === 2) hook.cell.styles.fillColor = [200, 200, 200]
         else if (rank === 3)
-          hook.cell.styles.fillColor = [217, 152, 86] as unknown as number[]
+          hook.cell.styles.fillColor = [217, 152, 86]
       }
       // Color the moyenne cell
       if (hook.column.index === 3 && hook.section === 'body') {
         const m = parseFloat(String(hook.cell.raw))
-        if (m >= 14) hook.cell.styles.textColor = SUCCESS as unknown as number[]
-        else if (m >= 10) hook.cell.styles.textColor = NAVY as unknown as number[]
-        else hook.cell.styles.textColor = WARNING as unknown as number[]
+        if (m >= 14) hook.cell.styles.textColor = SUCCESS
+        else if (m >= 10) hook.cell.styles.textColor = NAVY
+        else hook.cell.styles.textColor = WARNING
       }
     },
   })

@@ -221,6 +221,16 @@ export interface Eleve {
   ajoutePar?: string  // uid of who added
   codePin: string         // 6 chars from safe alphabet (élève login)
   passkeyParent: string   // PRNT-XXXX-XXXX (parent login)
+  /**
+   * Legacy/optional eleve metadata — written by inscription forms or
+   * imported from the legacy app. Read defensively (always with `eleve.X && ...`)
+   * and surfaced on archive/finance views when present. Never written by
+   * current RT-SC code paths.
+   */
+  matricule?: string
+  telephoneParent?: string
+  emailParent?: string
+  adresse?: string
   moyenneAnnuelle?: number
   statutAnnuel?: StatutAnnuel
   rang?: string  // e.g. "3ème/45", "1er/45", "1ère ex/45"

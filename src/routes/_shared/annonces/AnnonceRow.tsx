@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { useClasses } from '@/hooks/useClasses'
-import { nomClasse } from '@/lib/benin'
 import type { Annonce, AnnoncePriority } from '@/types/models'
 
 // ─── Row ────────────────────────────────────────────────────
@@ -103,7 +102,10 @@ function makeScopeSummary(
   if (ids.length === 0) return 'Aucune classe'
   if (ids.length === 1) {
     const c = allClasses.find((x) => x.id === ids[0])
-    return c ? nomClasse(c as Parameters<typeof nomClasse>[0]) : '1 classe'
+    if (!c) return '1 classe'
+    // Light label since the caller only gives us niveau + serie (not cycle/salle).
+    // Full nomClasse() is used elsewhere where the entire Classe is in scope.
+    return `${c.niveau ?? ''}${c.serie ? ` ${c.serie}` : ''}`.trim() || '1 classe'
   }
   return `${ids.length} classes`
 }

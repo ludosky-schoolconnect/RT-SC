@@ -107,7 +107,7 @@ export function ModalParentCodes({ open, onClose, classeId, classeName }: Props)
                           {e.nom}
                         </p>
                         <p className="text-[0.7rem] text-ink-400 mt-0.5">
-                          {e.genre === 'Masculin' ? 'M' : 'F'}
+                          {e.genre}
                           {e.contactParent ? ` · ${e.contactParent}` : ''}
                         </p>
 

@@ -14,7 +14,7 @@
 
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import type { Bulletin, Eleve, Note } from '@/types/models'
+import type { Bulletin, Note } from '@/types/models'
 
 interface ExtractMoyObj {
   moyenneInterros?: number | null
@@ -138,7 +138,7 @@ export function exportTranscriptCSV(input: {
           mat,
           (n.periode ?? '—') as string,
           moy !== null ? moy.toFixed(2) : '',
-          n.abandon ? 'oui' : 'non',
+          n.abandonne ? 'oui' : 'non',
         ]
           .map(csvField)
           .join(',')
@@ -256,7 +256,7 @@ export function exportTranscriptPDF(input: {
         mat,
         (n.periode ?? '—') as string,
         moy !== null ? moy.toFixed(2) : '—',
-        n.abandon ? 'oui' : '',
+        n.abandonne ? 'oui' : '',
       ])
     }
   }

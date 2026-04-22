@@ -39,7 +39,6 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
-  collection,
   collectionGroup,
   getAggregateFromServer,
   getDocs,
@@ -49,7 +48,6 @@ import {
   query,
   where,
   average,
-  count,
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import {
@@ -188,7 +186,7 @@ export function useSchoolAnalytics(periodeOverride?: string | null) {
       // Manual override wins when provided; otherwise auto-detect from today
       const currentPeriodeName =
         periodeOverride ??
-        currentPeriode(typePeriode, nbPeriodes, periodeDates)
+        currentPeriode(typePeriode, nbPeriodes, new Date(), periodeDates)
 
       // ─── 1. All eleves (used by multiple sections) ──────────
       // Use collectionGroup so we get every eleve across every class

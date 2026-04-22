@@ -117,6 +117,7 @@ export function AnalytiquesTab() {
     return currentPeriode(
       bulletinConfig.typePeriode,
       bulletinConfig.nbPeriodes,
+      new Date(),
       bulletinConfig.periodeDates
     )
   }, [bulletinConfig])

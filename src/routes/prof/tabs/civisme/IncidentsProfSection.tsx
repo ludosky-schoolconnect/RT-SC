@@ -145,7 +145,6 @@ export function IncidentsProfSection() {
           label="Classe"
           value={classeId}
           onChange={(e) => setClasseId(e.target.value)}
-          leading={<SchoolIcon className="h-4 w-4" aria-hidden />}
         >
           <option value="">-- Choisir une classe --</option>
           {myClasses.map((c) => (

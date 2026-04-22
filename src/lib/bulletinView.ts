@@ -32,6 +32,9 @@ export interface BulletinViewMatiereRow {
   matiere: string
   /** True if the élève abandoned this matière for this period */
   abandonne: boolean
+  /** Raw interro values (used by PDF + detail view to show the breakdown).
+   *  Empty array when no notes or abandonné. */
+  interros: number[]
   /** M.I. (mean of interros). null if no interros entered. */
   moyenneInterros: number | null
   devoir1: number | null
@@ -108,6 +111,7 @@ export function assembleBulletinPeriodView(
       return {
         matiere: m,
         abandonne: note?.abandonne === true,
+        interros: [],
         moyenneInterros: null,
         devoir1: null,
         devoir2: null,
@@ -121,6 +125,7 @@ export function assembleBulletinPeriodView(
     return {
       matiere: m,
       abandonne: false,
+      interros: note.interros ?? [],
       moyenneInterros: note.moyenneInterros ?? null,
       devoir1: note.devoir1 ?? null,
       devoir2: note.devoir2 ?? null,

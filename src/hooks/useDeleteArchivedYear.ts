@@ -68,21 +68,6 @@ const SUB_KINDS: Array<'notes' | 'colles' | 'absences' | 'bulletins' | 'paiement
   'paiements',
 ]
 
-async function deleteCollectionDocs(
-  colPath: string,
-  onDocDeleted: () => void
-): Promise<number> {
-  const snap = await getDocs(collection(db, colPath))
-  // Parallel per-batch for speed, but yield to UI between iterations
-  await Promise.all(
-    snap.docs.map(async (d) => {
-      await deleteDoc(d.ref)
-      onDocDeleted()
-    })
-  )
-  return snap.docs.length
-}
-
 export function useDeleteArchivedYear() {
   return useMutation({
     mutationFn: async (input: DeleteArchivedYearInput) => {

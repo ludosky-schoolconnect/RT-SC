@@ -15,7 +15,6 @@
 import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Award, FileText, Lock, Sparkles, ChevronRight } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'

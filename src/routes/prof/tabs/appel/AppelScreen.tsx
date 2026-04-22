@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ArrowLeft, ChevronDown, Check, Clock, Search, X, Save,
+  ArrowLeft, Check, Clock, Search, X, Save,
   AlertCircle,
 } from 'lucide-react'
 

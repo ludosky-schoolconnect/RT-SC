@@ -17,7 +17,6 @@ import {
   getDoc,
   getDocs,
   setDoc,
-  updateDoc,
   writeBatch,
 } from 'firebase/firestore'
 import { db, docRef } from '@/firebase'

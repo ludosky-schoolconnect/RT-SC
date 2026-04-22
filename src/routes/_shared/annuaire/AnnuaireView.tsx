@@ -167,7 +167,7 @@ export function AnnuaireView({ adminMode = false }: Props) {
 // ─── Helpers ─────────────────────────────────────────────────
 
 function classeLabelFor(
-  c: { niveau: string; serie?: string; salle: string } | undefined
+  c: { niveau: string; serie?: string | null; salle: string } | undefined
 ): string {
   if (!c) return '—'
   return `${c.niveau}${c.serie ? ` ${c.serie}` : ''} ${c.salle}`

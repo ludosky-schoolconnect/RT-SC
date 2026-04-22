@@ -28,8 +28,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Archive as ArchiveIcon, CalendarOff, ChevronDown, ChevronRight,
-  ClipboardCheck, Clock, Search, Trash2, User,
+  Archive as ArchiveIcon, ChevronDown, ChevronRight,
+  Clock, Search, Trash2, User,
 } from 'lucide-react'
 
 import { Spinner } from '@/components/ui/Spinner'

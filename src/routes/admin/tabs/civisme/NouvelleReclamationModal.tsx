@@ -18,10 +18,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Gift,
-  Coins,
-  School as SchoolIcon,
-  GraduationCap,
   Save,
   Lock,
 } from 'lucide-react'
@@ -189,7 +185,6 @@ export function NouvelleReclamationModal({
           value={classeId}
           onChange={(e) => setClasseId(e.target.value)}
           disabled={submitting}
-          leading={<SchoolIcon className="h-4 w-4" aria-hidden />}
         >
           <option value="">-- Choisir une classe --</option>
           {classesSorted.map((c) => (
@@ -204,7 +199,6 @@ export function NouvelleReclamationModal({
           value={eleveId}
           onChange={(e) => setEleveId(e.target.value)}
           disabled={!classeId || loadingEleves || submitting}
-          leading={<GraduationCap className="h-4 w-4" aria-hidden />}
           hint={
             !classeId
               ? "Choisissez d'abord une classe."
@@ -228,7 +222,6 @@ export function NouvelleReclamationModal({
           value={recompenseId}
           onChange={(e) => setRecompenseId(e.target.value)}
           disabled={!eleveId || submitting || visibleRewards.length === 0}
-          leading={<Gift className="h-4 w-4" aria-hidden />}
           hint={
             visibleRewards.length === 0
               ? 'Aucune récompense dans le catalogue.'

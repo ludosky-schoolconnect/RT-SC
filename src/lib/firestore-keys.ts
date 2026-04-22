@@ -182,7 +182,7 @@ export const archiveEleveSubCol = (
   annee: string,
   classeId: string,
   eleveId: string,
-  sub: 'notes' | 'colles' | 'absences' | 'bulletins' | 'paiements'
+  sub: 'notes' | 'colles' | 'absences' | 'bulletins' | 'paiements' | 'civismeHistory'
 ) => `archive/${annee}/classes/${classeId}/eleves/${eleveId}/${sub}`
 
 // Top-level archived collections

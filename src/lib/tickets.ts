@@ -13,7 +13,6 @@
  * can disambiguate via the underlying claim ID.
  */
 
-const SAFE_ALPHABET = 'ABCDEFGHJKMNPQRTUVWXY3469' // 25 chars, removed Z by mistake — let me recount
 
 // Safer, audited:
 //   A B C D E F G H J K M N P Q R T U V W X Y 3 4 6 7 9

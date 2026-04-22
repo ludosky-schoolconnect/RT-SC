@@ -187,7 +187,7 @@ export function useSaveNote() {
         devoir2: input.devoir2,
       })
 
-      const noteData: Partial<Note> & { updatedAt: ReturnType<typeof serverTimestamp> } = {
+      const noteData: Record<string, unknown> = {
         matiere: input.matiere,
         periode: input.periode,
         interros: input.interros,

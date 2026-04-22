@@ -22,7 +22,6 @@ import {
   ListChecks,
   Coins,
   Users,
-  Clock,
   CheckCircle2,
   XCircle,
   Hourglass,

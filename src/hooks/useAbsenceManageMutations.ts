@@ -22,7 +22,6 @@ import {
   deleteField,
   doc,
   getDoc,
-  getDocFromServer,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore'

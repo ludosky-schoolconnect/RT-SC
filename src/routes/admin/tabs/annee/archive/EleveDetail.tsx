@@ -360,7 +360,7 @@ function NotesTab({ annee, classeId, eleveId }: { annee: string; classeId: strin
                       {moy.toFixed(2)}
                     </span>
                   )}
-                  {n.abandon && (
+                  {n.abandonne && (
                     <Badge variant="neutral" size="sm">Abandon</Badge>
                   )}
                 </div>

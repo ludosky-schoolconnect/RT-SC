@@ -34,7 +34,6 @@ import {
 } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Spinner } from '@/components/ui/Spinner'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import { useToast } from '@/stores/toast'
 import { useQueryClient } from '@tanstack/react-query'

@@ -19,7 +19,7 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  ClipboardCheck, Clock, Calendar, ChevronRight, Sparkles,
+  ClipboardCheck, Clock, Calendar, ChevronRight,
 } from 'lucide-react'
 
 import { Section, SectionHeader } from '@/components/layout/Section'

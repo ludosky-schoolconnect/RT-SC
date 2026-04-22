@@ -52,7 +52,6 @@ import {
 } from '@/components/ui/Modal'
 import { TicketCard, type TicketCardData } from '@/routes/_shared/civisme/TicketCard'
 import { nomClasse } from '@/lib/benin'
-import { cn } from '@/lib/cn'
 import type { Quete, Eleve } from '@/types/models'
 
 export function QuetesProfTab() {

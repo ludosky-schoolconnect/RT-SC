@@ -20,7 +20,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { collection, getDoc, getDocs, orderBy, query } from 'firebase/firestore'
+import { collection, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '@/firebase'
 import {
   archiveClassesCol,
@@ -28,7 +28,6 @@ import {
   archiveElevesCol,
   archiveEleveDoc,
   archiveEleveSubCol,
-  archiveYearDoc,
 } from '@/lib/firestore-keys'
 import { doc } from 'firebase/firestore'
 import type {
@@ -83,7 +82,7 @@ export function useArchivedClasses(annee: string | null | undefined) {
     queryFn: async () => {
       if (!annee) return []
       const snap = await getDocs(collection(db, archiveClassesCol(annee)))
-      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Classe) }))
+      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Classe, "id">) }))
     },
     staleTime: TEN_MIN,
   })
@@ -100,7 +99,7 @@ export function useArchivedClasse(
       if (!annee || !classeId) return null
       const snap = await getDoc(doc(db, archiveClasseDoc(annee, classeId)))
       if (!snap.exists()) return null
-      return { id: snap.id, ...(snap.data() as Classe) }
+      return { id: snap.id, ...(snap.data() as Omit<Classe, "id">) }
     },
     staleTime: TEN_MIN,
   })
@@ -119,7 +118,7 @@ export function useArchivedEleves(
       if (!annee || !classeId) return []
       const snap = await getDocs(collection(db, archiveElevesCol(annee, classeId)))
       return snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as Eleve) }))
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<Eleve, "id">) }))
         .sort((a, b) => (a.nom ?? '').localeCompare(b.nom ?? ''))
     },
     staleTime: TEN_MIN,
@@ -145,7 +144,7 @@ export function useArchivedEleve(
       if (!annee || !classeId || !eleveId) return null
       const snap = await getDoc(doc(db, archiveEleveDoc(annee, classeId, eleveId)))
       if (!snap.exists()) return null
-      return { id: snap.id, ...(snap.data() as Eleve) }
+      return { id: snap.id, ...(snap.data() as Omit<Eleve, "id">) }
     },
     staleTime: TEN_MIN,
   })

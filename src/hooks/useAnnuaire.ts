@@ -148,7 +148,7 @@ export function useUpsertAnnuaireEntry() {
           tel: normalizeTel(input.tel),
           classeId: input.classeId,
           eleveId: input.eleveId,
-          dateAjout: serverTimestamp(),
+          dateAjout: serverTimestamp() as unknown as Timestamp,
           expireAt: Timestamp.fromDate(expireAt),
         } satisfies Omit<AnnuaireParent, 'id'>,
         { merge: false } // full replace — each update refreshes expiry
