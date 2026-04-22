@@ -274,6 +274,7 @@ firebase deploy --only functions --project schoolconnect-nlg
 #   ✔ functions[testEmail(us-central1)]: Successful create operation.
 #   ✔ functions[dailyPresenceRollover(us-central1)]: Successful create operation.
 #   ✔ functions[monthlyCivismePurge(us-central1)]: Successful create operation.
+#   ✔ functions[weeklyStaleAbsencesCleanup(us-central1)]: Successful create operation.
 #   ✔ functions[nightlyBackup(us-central1)]: Successful create operation.
 #   ✔ functions[yearlySnapshotOnRollover(us-central1)]: Successful create operation.
 #   ✔ functions[yearlySnapshotFallback(us-central1)]: Successful create operation.
@@ -417,6 +418,9 @@ In the shell:
 ```js
 // Daily presence rollover — should move yesterday's presences (if any) to /archived_absences
 dailyPresenceRollover()
+
+// Weekly stale absences cleanup — deletes parent-declared absences older than 14 days
+weeklyStaleAbsencesCleanup()
 
 // Monthly civisme purge — should delete old terminal-state quêtes/réclamations (if any)
 monthlyCivismePurge()

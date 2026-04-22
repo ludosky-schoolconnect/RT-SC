@@ -23,6 +23,7 @@ import type { Classe } from '@/types/models'
 import { motion } from 'framer-motion'
 import { ModalParentCodes } from './ModalParentCodes'
 import { ModalAbsencesClasse } from '@/routes/_shared/absences/ModalAbsencesClasse'
+import { ExamCountdownWidget } from '@/components/ExamCountdownWidget'
 
 export function MesClassesTab() {
   const profil = useAuthStore((s) => s.profil)
@@ -38,8 +39,18 @@ export function MesClassesTab() {
     [myClasses, profil?.id]
   )
 
+  // Niveaux of the classes this prof teaches — used by the exam
+  // countdown widget to decide whether to render. Widget self-hides
+  // if none are exam-eligible.
+  const classLevels = useMemo(
+    () => myClasses.map((c) => c.niveau),
+    [myClasses]
+  )
+
   return (
     <Section>
+      <ExamCountdownWidget mode="prof" classLevels={classLevels} />
+
       <SectionHeader
         kicker="Référence"
         title="Mes classes"

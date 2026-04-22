@@ -230,11 +230,10 @@ Recent rule additions:
 
 ## 5 · What's NOT done / future work
 
-**Blaze foundation (dormant in `/functions/`)** — Sessions A, B, and C of
-the Blaze rollout shipped: `functions/` directory with scaffolding and 10
-functions total. The code sits compiled but unshipped; nothing executes
-until Ludosky enables Blaze + runs the deploy playbook at
-`/DEPLOY-ONCE-BLAZE-IS-READY.md`.
+**Blaze foundation (dormant in `/functions/`)** — All four sessions shipped
+(A through D): `functions/` directory with scaffolding and 11 functions
+total. The code sits compiled but unshipped; nothing executes until Ludosky
+enables Blaze + runs the deploy playbook at `/DEPLOY-ONCE-BLAZE-IS-READY.md`.
 
 Shipped functions (dormant):
   - **Session A · Security**
@@ -254,6 +253,8 @@ Shipped functions (dormant):
       `/archived_absences/`)
     - `monthlyCivismePurge` — runs 01:00 on the 1st, deletes terminal-state
       quêtes/réclamations older than 180 days (replaces manual Purger button)
+    - `weeklyStaleAbsencesCleanup` — runs 02:30 Sunday, deletes declared
+      absences older than 14 days (replaces client-side batch delete)
     - `nightlyBackup` — 02:00 daily Firestore export to
       `gs://<project>-backups/daily/YYYY-MM-DD/`, 30-day rotation via GCS
       lifecycle rule (not function logic)
@@ -263,18 +264,20 @@ Shipped functions (dormant):
     - `yearlySnapshotFallback` — Aug 31 at 03:00, emergency snapshot if admin
       forgot to run year rollover + email nudge
 
-Frontend changes shipped alongside Session B:
-  - `InscriptionFormPanel.tsx` — added optional "Email du parent" field
-  - `types/models.ts` — added `emailParent?` to `PreInscription` interface
+Frontend changes shipped alongside the Blaze foundation:
+  - **Session B**: `InscriptionFormPanel.tsx` — optional "Email du parent"
+    field; `types/models.ts` — added `emailParent?` to `PreInscription`
+  - **Session D (frontend cleanup)**:
+    - Deleted `src/hooks/useArchiveRollover.ts` (replaced by scheduled fn)
+    - Deleted `src/hooks/usePurgeOldCivismeData.ts` (replaced by scheduled fn)
+    - `VieScolaireTab.tsx` — removed `useArchiveRollover(canManage)` call
+    - `useSchoolAbsences.ts` — removed client-side 14-day batch-delete,
+      kept the 14-day display filter (scheduled fn handles actual cleanup)
+    - `MaintenanceCard.tsx` in civisme admin tab — converted from action
+      button to status display ("Prochaine purge : 1er juin 2026")
+    - `useSchoolMarkedAbsences.ts` — updated stale comment reference
 
-Session D pending:
-  - Remove `useArchiveRollover` hook invocation from `VieScolaireTab.tsx`
-    (the scheduled function replaces it)
-  - Remove `useSchoolAbsences` 14-day batch-delete (can be a scheduled
-    job too, or removed entirely since the archive rollover handles it)
-  - Decide whether to keep the manual "Purger" button in Civisme tab as
-    admin override, or remove it entirely
-  - Ship the frontend cleanup in one zip
+No Blaze session pending. Future work is in "**Also deferred**" below.
 
 **Also deferred — unrelated to Blaze**:
 

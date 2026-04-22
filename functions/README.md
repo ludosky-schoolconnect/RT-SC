@@ -48,6 +48,12 @@ Runs **01:00 on the 1st of every month**. Deletes terminal-state
 quêtes and réclamations older than 180 days (plus cascade of claims).
 Replaces the manual "Purger" button in the Civisme tab.
 
+### `scheduled/weeklyStaleAbsencesCleanup`
+Runs **02:30 every Sunday**. Deletes declared absences
+(`/classes/*/eleves/*/absences`) older than 14 days from the live
+collection. Replaces the client-side batch-delete that used to run
+in `useSchoolAbsences` on admin page loads.
+
 ### `scheduled/nightlyBackup`
 Runs **02:00 daily**. Triggers a full Firestore export to
 `gs://<project>-backups/daily/YYYY-MM-DD/`. Retention (30 days) is
@@ -119,8 +125,19 @@ See `/DEPLOY-ONCE-BLAZE-IS-READY.md` at the repo root. Never run
 `firebase deploy --only functions` on a Spark-plan project — fails
 with a billing error.
 
-## Pending session
+## Session D — Frontend cleanup (shipped)
 
-- **Session D — Frontend cleanup**: remove `useArchiveRollover`,
-  `useSchoolAbsences` batch-delete, manual Purger button now that
-  scheduled functions cover them.
+Client-side workarounds removed now that scheduled functions handle
+their jobs:
+
+- **`useArchiveRollover`** (hook file deleted) — replaced by
+  `dailyPresenceRollover`
+- **`usePurgeOldCivismeData`** (hook file deleted) — replaced by
+  `monthlyCivismePurge`
+- **`useSchoolAbsences`** client-side batch-delete (removed; display
+  filter kept) — replaced by `weeklyStaleAbsencesCleanup`
+- **Civisme "Maintenance" card** — action button replaced with status
+  display showing next automatic purge date
+
+All four Blaze-foundation sessions (A, B, C, D) are now in the repo.
+Deploy when Blaze is enabled per the playbook.

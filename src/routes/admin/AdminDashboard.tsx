@@ -36,6 +36,7 @@ import {
   Trophy,
   BarChart3,
   MonitorPlay,
+  Hourglass,
 } from 'lucide-react'
 import { DashboardLayout, type DashboardTab } from '@/components/layout/DashboardLayout'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
@@ -52,6 +53,7 @@ import { AnnalesAdminTab } from './tabs/annales/AnnalesAdminTab'
 import { CivismeAdminTab } from './tabs/civisme/CivismeAdminTab'
 import { PalmaresAdminTab } from './tabs/palmares/PalmaresAdminTab'
 import { AnalytiquesTab } from './tabs/analytiques/AnalytiquesTab'
+import { ExamensAdminTab } from './tabs/examens/ExamensAdminTab'
 import { VisioHostTab } from '@/routes/_shared/visio/VisioHostTab'
 import { VieScolaireTab } from '@/routes/_shared/absences/VieScolaireTab'
 import { TabPlaceholder } from './tabs/TabPlaceholder'
@@ -67,6 +69,7 @@ const TABS: DashboardTab[] = [
   { id: 'emploi',       label: 'Emploi',       icon: <CalendarClock className="h-full w-full" /> },
   { id: 'annonces',     label: 'Annonces',     icon: <Megaphone className="h-full w-full" /> },
   { id: 'annales',      label: 'Annales',      icon: <Library className="h-full w-full" /> },
+  { id: 'examens',      label: 'Examens',      icon: <Hourglass className="h-full w-full" /> },
   { id: 'civisme',      label: 'Civisme',      icon: <Award className="h-full w-full" /> },
   { id: 'visio',        label: 'Visio',        icon: <MonitorPlay className="h-full w-full" /> },
   { id: 'palmares',     label: 'Palmarès',     icon: <Trophy className="h-full w-full" /> },
@@ -112,6 +115,8 @@ export default function AdminDashboard() {
             return <AnnoncesAdminTab />
           case 'annales':
             return <AnnalesAdminTab />
+          case 'examens':
+            return <ExamensAdminTab />
           case 'civisme':
             return <CivismeAdminTab />
           case 'visio':

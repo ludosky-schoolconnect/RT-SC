@@ -32,6 +32,10 @@
  *                                     Runs 01:00 on the 1st of each month,
  *                                     deletes terminal-state quêtes/réclamations
  *                                     older than 180 days.
+ *     - weeklyStaleAbsencesCleanup  → replaces client-side useSchoolAbsences
+ *                                     batch-delete. Sunday 02:30, removes
+ *                                     declared absences older than 14 days
+ *                                     from the live collection.
  *     - nightlyBackup               → 02:00 daily Firestore export to
  *                                     gs://<project>-backups/daily/<date>/
  *                                     Retention via GCS lifecycle rule (30 days).
@@ -60,6 +64,7 @@ export { testEmail } from './http/testEmail.js'
 // ── Session C
 export { dailyPresenceRollover } from './scheduled/dailyPresenceRollover.js'
 export { monthlyCivismePurge } from './scheduled/monthlyCivismePurge.js'
+export { weeklyStaleAbsencesCleanup } from './scheduled/weeklyStaleAbsencesCleanup.js'
 export { nightlyBackup } from './scheduled/nightlyBackup.js'
 export { yearlySnapshotOnRollover } from './triggers/yearlySnapshotOnRollover.js'
 export { yearlySnapshotFallback } from './scheduled/yearlySnapshotFallback.js'

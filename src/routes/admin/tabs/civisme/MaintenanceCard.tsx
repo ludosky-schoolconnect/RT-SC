@@ -1,64 +1,39 @@
 /**
- * RT-SC · Civisme admin — Maintenance card.
+ * RT-SC · Civisme admin — Maintenance card (status).
  *
- * Lets admin purge old/closed civisme records (quêtes clôturées ou
- * annulées + leurs claims, réclamations honorées ou annulées) older
- * than a retention threshold. civismeHistory entries are never
- * touched by this — the audit trail stays.
+ * Previously a "Purger" action button that admin clicked periodically.
+ * The purge now runs server-side every month via the scheduled Cloud
+ * Function `monthlyCivismePurge` (Session C) — no admin action
+ * required. This card reassures them the maintenance is happening
+ * automatically and shows when the next run is scheduled.
  *
- * Suggested cadence: once per trimester or at year rollover.
+ * The date shown is computed client-side (next 1st of month at 01:00
+ * Africa/Porto-Novo). It's informational; the actual schedule lives
+ * in `functions/src/scheduled/monthlyCivismePurge.ts`.
  */
 
-import { useState } from 'react'
-import { Archive, AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { Button } from '@/components/ui/Button'
-import { useConfirm } from '@/stores/confirm'
-import { useToast } from '@/stores/toast'
-import { usePurgeOldCivismeData } from '@/hooks/usePurgeOldCivismeData'
+import { useMemo } from 'react'
+import { Archive, Info } from 'lucide-react'
+
+const MOIS_FR = [
+  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+] as const
+
+/** Next 1st of month, at or after today, formatted as "1er juin 2026". */
+function nextPurgeDateFr(now: Date): string {
+  // Start with the 1st of the current month at 01:00 local time
+  const candidate = new Date(now.getFullYear(), now.getMonth(), 1, 1, 0, 0)
+  // If today is already past that (i.e. we're on the 2nd or later), next is the 1st of next month
+  if (now.getTime() >= candidate.getTime()) {
+    candidate.setMonth(candidate.getMonth() + 1)
+  }
+  const day = candidate.getDate() === 1 ? '1er' : `${candidate.getDate()}`
+  return `${day} ${MOIS_FR[candidate.getMonth()]} ${candidate.getFullYear()}`
+}
 
 export function MaintenanceCard() {
-  const purgeMut = usePurgeOldCivismeData()
-  const confirm = useConfirm()
-  const toast = useToast()
-  const [lastResult, setLastResult] = useState<
-    { qc: number; cc: number; rc: number; at: Date } | null
-  >(null)
-
-  async function handlePurge() {
-    const ok = await confirm({
-      title: 'Purger les anciennes données ?',
-      message:
-        "Supprime définitivement les quêtes clôturées ou annulées et les réclamations honorées ou annulées de plus de 6 mois. L'historique des points de chaque élève est conservé.",
-      confirmLabel: 'Purger',
-      variant: 'warning',
-    })
-    if (!ok) return
-
-    try {
-      const res = await purgeMut.mutateAsync(180)
-      setLastResult({
-        qc: res.quetesDeleted,
-        cc: res.claimsDeleted,
-        rc: res.reclamationsDeleted,
-        at: new Date(),
-      })
-      const total = res.quetesDeleted + res.claimsDeleted + res.reclamationsDeleted
-      if (total === 0) {
-        toast.success('Aucune donnée à purger.')
-      } else {
-        toast.success(
-          `Purge terminée : ${res.quetesDeleted} quêtes, ${res.claimsDeleted} participations, ${res.reclamationsDeleted} réclamations supprimées.`
-        )
-      }
-    } catch (err) {
-      console.error('[MaintenanceCard] purge failed:', err)
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : 'Erreur lors de la purge.'
-      )
-    }
-  }
+  const nextDate = useMemo(() => nextPurgeDateFr(new Date()), [])
 
   return (
     <div className="mt-8 rounded-lg border-[1.5px] border-ink-100 bg-white overflow-hidden">
@@ -67,51 +42,23 @@ export function MaintenanceCard() {
           <Archive className="h-3.5 w-3.5 text-navy" aria-hidden />
         </div>
         <p className="font-display text-[0.9rem] font-bold text-navy leading-tight">
-          Maintenance
+          Maintenance automatique
         </p>
       </div>
       <div className="px-4 py-3 space-y-3">
-        <div className="flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-warning-dark shrink-0 mt-0.5" aria-hidden />
-          <p className="text-[0.78rem] text-ink-600 leading-snug">
-            Nettoyez les quêtes clôturées/annulées et les réclamations
-            honorées/annulées de plus de 6 mois pour libérer de l'espace
-            de stockage. L'historique des points de chaque élève n'est
-            PAS affecté.
+        <p className="text-[0.78rem] text-ink-600 leading-snug">
+          Les quêtes clôturées ou annulées et les réclamations honorées
+          ou annulées de plus de 6 mois sont automatiquement supprimées
+          chaque mois pour libérer de l'espace de stockage. L'historique
+          des points de chaque élève est préservé.
+        </p>
+
+        <div className="rounded-md bg-info-bg/60 border border-navy/15 px-3 py-2 flex items-start gap-2">
+          <Info className="h-3.5 w-3.5 text-navy shrink-0 mt-0.5" aria-hidden />
+          <p className="text-[0.72rem] text-ink-700 leading-snug">
+            <span className="font-bold">Prochaine purge :</span> {nextDate}
           </p>
         </div>
-
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handlePurge}
-          loading={purgeMut.isPending}
-          leadingIcon={<Archive className="h-4 w-4" aria-hidden />}
-          className="w-full"
-        >
-          Purger les anciennes données (&gt; 6 mois)
-        </Button>
-
-        {lastResult && (
-          <div className="rounded-md bg-success-bg/60 border border-success/30 px-3 py-2 flex items-start gap-2">
-            <CheckCircle2 className="h-3.5 w-3.5 text-success-dark shrink-0 mt-0.5" aria-hidden />
-            <div className="text-[0.72rem] text-success-dark leading-snug">
-              <p className="font-bold">
-                Dernière purge :{' '}
-                {lastResult.at.toLocaleDateString('fr-FR', {
-                  day: 'numeric',
-                  month: 'short',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </p>
-              <p className="mt-0.5">
-                {lastResult.qc} quêtes · {lastResult.cc} participations ·{' '}
-                {lastResult.rc} réclamations supprimées.
-              </p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

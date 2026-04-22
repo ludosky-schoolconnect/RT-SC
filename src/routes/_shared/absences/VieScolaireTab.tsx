@@ -31,7 +31,6 @@ import { AbsencesClasseView } from './AbsencesClasseView'
 import { AbsencesEcoleView } from './AbsencesEcoleView'
 import { AppelsDuJourView } from './AppelsDuJourView'
 import { ArchiveAdminTab } from '@/routes/admin/tabs/archive/ArchiveAdminTab'
-import { useArchiveRollover } from '@/hooks/useArchiveRollover'
 
 type ViewMode = 'school' | 'classe' | 'appels' | 'archive'
 
@@ -54,10 +53,10 @@ export function VieScolaireTab({
   kicker = 'Vie scolaire',
   description,
 }: Props) {
-  // Daily archive rollover — triggers on admin's first Vie scolaire
-  // visit per session, regardless of which mode they land on. Profs
-  // pass canRun=false (rules would block the writes anyway).
-  useArchiveRollover(canManage)
+  // The daily archive rollover now runs server-side as a scheduled
+  // Cloud Function (`dailyPresenceRollover`, Session C). No client-
+  // side rollover needed — the triage view already shows only today's
+  // live presences and yesterday's appels are archived overnight.
 
   // Default mode:
   //   - Admin → 'appels' (daily monitoring, most useful)

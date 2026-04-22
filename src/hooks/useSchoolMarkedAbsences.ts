@@ -66,7 +66,7 @@ export function useSchoolMarkedAbsences() {
         snap.docs.forEach((d) => {
           const { classeId, dateISO } = parsePresencePath(d.ref.path)
           // Skip pre-today docs — they belong in the archive (rolled over
-          // by useArchiveRollover the next time admin opens triage).
+          // nightly by the dailyPresenceRollover scheduled Cloud Function).
           if (dateISO < today) return
           const presenceDoc = d.data() as PresenceDoc
           for (const [matiereSlug, slot] of Object.entries(presenceDoc)) {

@@ -26,7 +26,9 @@ import { PaiementWidget } from '@/routes/_shared/PaiementWidget'
 import { EnglishHubWidget } from '@/routes/_shared/EnglishHubWidget'
 import { LaboWidget } from '@/routes/_shared/labo/LaboWidget'
 import { BilanAnnuelWidget } from '@/routes/_shared/BilanAnnuelWidget'
+import { ExamCountdownWidget } from '@/components/ExamCountdownWidget'
 import { useGreeting } from '@/hooks/useGreeting'
+import { getExamLevel } from '@/lib/exam-utils'
 
 interface AccueilTabProps {
   classeId: string
@@ -85,6 +87,13 @@ export function AccueilTab({
           classeId={classeId}
           eleveId={eleveId}
           eleveName={eleveName}
+        />
+
+        {/* Exam countdown — visible only for 3ème / Terminale students.
+            Self-hides for other levels and when no countdowns exist. */}
+        <ExamCountdownWidget
+          mode="eleve"
+          eleveLevel={getExamLevel(classeNom)}
         />
 
         <section className="pt-2 space-y-3">
