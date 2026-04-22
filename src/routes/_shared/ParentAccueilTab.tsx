@@ -31,7 +31,9 @@ import { CivismeParentWidget } from '@/routes/_shared/civisme/CivismeParentWidge
 import { BilanAnnuelWidget } from '@/routes/_shared/BilanAnnuelWidget'
 import { AnnuaireParentWidget } from '@/routes/_shared/annuaire/AnnuaireParentWidget'
 import { VisioParentWidget } from '@/routes/_shared/visio/VisioParentWidget'
+import { ExamCountdownWidget } from '@/components/ExamCountdownWidget'
 import { useGreeting } from '@/hooks/useGreeting'
+import { getExamLevel } from '@/lib/exam-utils'
 
 interface ParentAccueilTabProps {
   classeId: string
@@ -100,6 +102,15 @@ export function ParentAccueilTab({
           classeId={classeId}
           eleveId={eleveId}
           eleveName={eleveName}
+        />
+
+        {/* Exam countdown — visible only when the child is in 3ème /
+            Terminale. Self-hides for other levels and when no
+            countdowns are configured. Reuses the same widget mounted
+            on the élève dashboard — same data, same urgency tiers. */}
+        <ExamCountdownWidget
+          mode="eleve"
+          eleveLevel={getExamLevel(classeNom)}
         />
 
         {/* ─── Suivi scolaire (live) ─── */}
