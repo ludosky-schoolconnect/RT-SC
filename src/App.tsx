@@ -34,6 +34,7 @@ import InscriptionPage from '@/routes/inscription/InscriptionPage'
 import PreviewPage from '@/routes/preview/PreviewPage'
 import AboutPage from '@/routes/about/AboutPage'
 import CmsAboutEditor from '@/routes/cms/CmsAboutEditor'
+import ResetSwPage from '@/routes/reset-sw/ResetSwPage'
 import { UidGate } from '@/components/guards/UidGate'
 
 // Lazy-loaded — heavy role dashboards in their own bundle
@@ -67,6 +68,10 @@ export default function App() {
       <SubscriptionGuard>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
+            {/* Service worker / cache kill switch — no guards so it
+                works even when auth or subscription state is broken. */}
+            <Route path="/reset-sw" element={<ResetSwPage />} />
+
             {/* Public entry points */}
             <Route path="/" element={<LandingPage />} />
             <Route path="/welcome" element={<WelcomePage />} />
