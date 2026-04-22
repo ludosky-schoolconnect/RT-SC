@@ -22,6 +22,7 @@ import {
   FileText,
   Info,
   Phone,
+  Mail,
   Upload,
   User,
 } from 'lucide-react'
@@ -66,6 +67,7 @@ interface FormState {
   dateNaissance: string
   niveauSouhaite: string
   contactParent: string
+  emailParent: string
   categorie: string
   /** docName → File (picked by user; not yet compressed/uploaded) */
   files: Record<string, File | null>
@@ -77,6 +79,7 @@ const EMPTY_FORM: FormState = {
   dateNaissance: '',
   niveauSouhaite: '',
   contactParent: '',
+  emailParent: '',
   categorie: '',
   files: {},
 }
@@ -118,6 +121,12 @@ export function InscriptionFormPanel() {
     if (!form.niveauSouhaite) errors.push("Niveau requis")
     if (!form.contactParent.trim() || form.contactParent.trim().length < 8) {
       errors.push('Numéro de téléphone valide requis')
+    }
+    // Email is OPTIONAL. Only validate format when something was typed —
+    // empty = no email notifications, which is a supported case.
+    const emailTrimmed = form.emailParent.trim()
+    if (emailTrimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+      errors.push('Adresse email invalide (laisser vide si non souhaitée)')
     }
     if (hasCategories && !form.categorie) {
       errors.push('Catégorie requise')
@@ -165,12 +174,17 @@ export function InscriptionFormPanel() {
       // 2. Create the inscription doc
       setProgress({ label: 'Envoi du dossier…', done: 0, total: 1 })
       const trackingCode = genererTrackingCode()
+      const emailTrimmed = form.emailParent.trim()
       const docRef = await addDoc(collection(db, preInscriptionsCol()), {
         nom: form.nom.trim(),
         genre: form.genre,
         date_naissance: form.dateNaissance,
         niveauSouhaite: form.niveauSouhaite,
         contactParent: form.contactParent.trim(),
+        // Only include emailParent when the applicant opted in. The
+        // Cloud Function that emails on status change silently skips
+        // docs without this field.
+        ...(emailTrimmed ? { emailParent: emailTrimmed } : {}),
         categorieDossier: form.categorie || undefined,
         dateSoumission: serverTimestamp(),
         statut: 'En attente',
@@ -290,6 +304,32 @@ export function InscriptionFormPanel() {
         <p className="text-[0.7rem] text-ink-500 mt-1">
           Utilisé pour les notifications WhatsApp et les rappels de rendez-vous.
         </p>
+
+        <div className="mt-4">
+          <FieldLabel>
+            <span className="inline-flex items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5 text-ink-500" aria-hidden />
+              Email du parent
+            </span>
+            <span className="ml-1.5 text-[0.7rem] font-normal text-ink-400 normal-case tracking-normal">
+              (facultatif)
+            </span>
+          </FieldLabel>
+          <Input
+            type="email"
+            value={form.emailParent}
+            onChange={(e) => set('emailParent', e.target.value)}
+            placeholder="parent@exemple.com"
+            inputMode="email"
+            maxLength={120}
+            autoComplete="email"
+          />
+          <p className="text-[0.7rem] text-ink-500 mt-1">
+            Si renseigné, vous recevrez un email dès que votre dossier
+            sera traité (approuvé ou refusé). Le suivi par code
+            SC-XXXXXX reste disponible dans tous les cas.
+          </p>
+        </div>
       </FormSection>
 
       {/* ── Category (optional depending on school config) ─── */}

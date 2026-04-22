@@ -157,9 +157,27 @@ export interface SubscriptionDoc {
   supportWhatsAppNumber?: string
 }
 
+/**
+ * Target audience for an exam countdown.
+ * 'tous' = visible to BOTH 3ème and Terminale (the two exam levels).
+ * This matches vanilla semantics: "Tous" does NOT mean everyone —
+ * it means the universal national-exam pool (BEPC + BAC levels).
+ */
+export type ExamCible = 'tous' | '3eme' | 'terminale'
+
+export interface ExamCountdown {
+  /** Stable client-side ID for React keys + deletion. */
+  id: string
+  /** Display name (e.g. "BEPC 2026", "BAC blanc"). */
+  label: string
+  /** YYYY-MM-DD date of the exam. */
+  date: string
+  /** Who sees this countdown. */
+  cible: ExamCible
+}
+
 export interface ExamensConfig {
-  // exam countdowns — admin sets dates
-  [key: string]: { date: Timestamp; label: string }
+  examens: ExamCountdown[]
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -580,6 +598,13 @@ export interface PreInscription {
   date_naissance: string  // YYYY-MM-DD
   niveauSouhaite: string
   contactParent: string
+  /**
+   * Optional parent email — introduced alongside the Cloud Functions
+   * email pipeline (Session B). If provided at submission time, the
+   * applicant receives an email when their status changes to
+   * Approuvé or Refusé. Free-form — validated only as "contains @".
+   */
+  emailParent?: string
   /**
    * Legacy embedded documents (base64 in the doc itself).
    * NEW dossiers use the /documents subcollection instead — leave this

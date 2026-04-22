@@ -1,20 +1,9 @@
 # RT-SC Cloud Functions
 
-**Status: DORMANT.** This directory contains the server-side logic
-that will activate when Blaze is enabled on the project. Until then,
-nothing here runs — the code just sits in the repo, versioned and
-ready.
+**Status: DORMANT.** Code lives in the repo, nothing executes until Blaze
+is enabled and `firebase deploy --only functions` runs.
 
-## Why this exists
-
-Pre-Blaze, certain operations have to happen client-side (e.g. the
-subscription deadline is extended in the admin's browser after a
-FedaPay payment). This creates a security hole: an admin can call the
-mutation directly from DevTools and extend their own deadline for
-free. Cloud Functions lets a trusted server do these writes instead,
-with Firestore rules enforcing that clients can't.
-
-## What's here (Session A)
+## Session A — Security (shipped, dormant)
 
 ### `triggers/onProfDelete`
 Fires when `/professeurs/{uid}` is deleted. Deletes the matching
@@ -22,43 +11,74 @@ Firebase Auth account so removed staff lose access immediately.
 
 ### `http/fedapayWebhook`
 HTTP endpoint FedaPay POSTs to when a transaction is approved.
-Verifies the HMAC signature (rejecting spoofed requests), reads the
-current subscription, computes the new deadline (early-pay vs late-pay
-math mirrored from `src/hooks/useSubscription.ts`), and writes it
-with admin credentials. The Firestore rule (deployed alongside)
-restricts `deadline` writes to the service account so clients can't
-spoof them.
+Verifies HMAC signature, computes the new deadline, writes it with
+admin credentials. The Firestore rule (in `firestore.rules.blaze`)
+restricts client-side `deadline` writes to the service account so
+admins can't F12-extend.
 
-Webhook URL shape per school:
+Webhook URL per school:
 ```
 https://us-central1-<schoolId>.cloudfunctions.net/fedapayWebhook
 ```
-Register this in each school's FedaPay dashboard under Settings →
-Webhooks.
 
-## What's coming (future sessions)
+## Session B — Email pipeline (shipped, dormant)
 
-- **Session B · Email pipeline** — Resend integration + transactional
-  email triggers (bulletin ready, payment received, absence declared,
-  pre-inscription status change, subscription expiring)
-- **Session C · Scheduled jobs** — daily presence rollover, monthly
-  civisme purge, weekly subscription expiry reminder, nightly
-  Firestore backup with 30-day rotation + annual frozen snapshot
-- **Session D · Frontend cleanup** — remove the client-side workarounds
-  (`useArchiveRollover`, manual "Purger" button, `useSchoolAbsences`
-  14-day batch delete) once the scheduled functions replace them
+### `scheduled/subscriptionReminder`
+Runs every day at **00:00 Africa/Porto-Novo**. For each school, emails
+the admin:
+- 14 days before deadline (friendly heads-up)
+- 7 days before (urgent)
+- 3 days before (last chance)
+- During the 3-day grace period after expiry (escalating)
 
-## Deploying
+After that, LockedPage takes over (the school will be locked, so
+email is no longer the right channel).
 
-Do NOT `firebase deploy --only functions` until Blaze is enabled on
-the target project. See `/DEPLOY-ONCE-BLAZE-IS-READY.md` for the full
-checklist. Deploying on the free Spark plan will fail with a billing
-error.
+Idempotency: writes `lastReminderSent` + `lastReminderDate` on
+`/ecole/subscription` to prevent duplicate sends on the same day.
 
-## Local development (Spark-compatible)
+### `triggers/onPreInscriptionStatusChange`
+Fires when `/pre_inscriptions/{id}` is updated. If `statut` changed
+to `Approuvé` or `Refusé` AND the applicant provided an
+`emailParent`, sends them a status email.
 
-You can run the emulator on Spark — functions don't actually execute
-Cloud resources when running locally.
+Approved emails include the RV date and assigned class.
+Refused emails include the reason if admin provided one.
+
+Parents without email still track via the SC-XXXXXX code.
+
+### `http/testEmail`
+POST to this endpoint with a JSON body `{"to": "you@example.com",
+"secret": "<TESTEMAIL_SECRET>"}` to verify Resend wiring. See Blaze
+playbook for setup.
+
+## Dependencies used this round
+
+- `resend` — transactional email (added in Session B)
+
+## Secrets per school
+
+Already in Session A:
+- `FEDAPAY_WEBHOOK_SECRET` — per-school, from FedaPay dashboard
+
+Added in Session B:
+- `RESEND_API_KEY` — shared across all school projects (one Resend
+  account, one key)
+- `TESTEMAIL_SECRET` — any random string; used as a gate on
+  `testEmail` so random internet traffic can't trigger it
+
+Environment (not secrets):
+- `EMAIL_FROM` — e.g. `"SchoolConnect <onboarding@resend.dev>"` in
+  dev, `"SchoolConnect <no-reply@yourdomain.bj>"` in prod
+- `SCHOOL_APP_URL` (optional) — overrides the default
+  `https://<project>.web.app` for links inside emails
+
+## Local emulator testing
+
+Functions run in the Firebase emulator without Blaze. Resend
+integration won't deliver mail unless you set `RESEND_API_KEY` to a
+real key, but you can test payload shapes by commenting out the
+`sendEmail` call and logging the template output.
 
 ```bash
 cd functions
@@ -67,20 +87,16 @@ npm run build
 firebase emulators:start --only functions,firestore
 ```
 
-## Secrets
+## Deploy (Blaze only)
 
-Production secrets live in Firebase Functions secret store, set with:
+See `/DEPLOY-ONCE-BLAZE-IS-READY.md` at the repo root. Never run
+`firebase deploy --only functions` on a Spark-plan project — it fails
+with a billing error.
 
-```bash
-firebase functions:secrets:set FEDAPAY_WEBHOOK_SECRET --project schoolconnect-<id>
-firebase functions:secrets:set RESEND_API_KEY --project schoolconnect-<id>
-```
+## Pending sessions
 
-Per-school: `FEDAPAY_WEBHOOK_SECRET` must be set separately per
-project (each school has its own FedaPay account).
-
-Shared across schools: `RESEND_API_KEY` can be the same value on
-every project if you use one Resend account for all.
-
-For local dev, copy `.env.example` → `.env` and fill in test values.
-`.env` is `.gitignore`d — never commit real secrets.
+- **Session C — Scheduled jobs**: daily presence rollover, monthly
+  civisme purge, nightly Firestore backup with 30-day rotation +
+  at-rollover annual snapshot
+- **Session D — Frontend cleanup**: remove `useArchiveRollover`,
+  `useSchoolAbsences` batch-delete, manual Purger button

@@ -230,15 +230,33 @@ Recent rule additions:
 
 ## 5 · What's NOT done / future work
 
-**Blaze foundation (dormant in `/functions/`)** — Session A of the Blaze
-rollout shipped: `functions/` directory with scaffolding, `onProfDelete`
-trigger, and `fedapayWebhook` HTTP function. The code sits compiled but
-unshipped; nothing executes until Ludosky enables Blaze + runs the deploy
-playbook at `/DEPLOY-ONCE-BLAZE-IS-READY.md`. See `functions/README.md`
-for per-function notes. Sessions B/C/D pending:
-  - Session B: email pipeline (Resend, bulletin/paiement/absence/annonce/preinscription triggers)
-  - Session C: scheduled jobs (daily rollover, monthly civisme purge, weekly subscription reminder, nightly backup)
-  - Session D: frontend cleanup (remove `useArchiveRollover`, `useSchoolAbsences` batch delete, manual Purger button)
+**Blaze foundation (dormant in `/functions/`)** — Sessions A and B of the Blaze
+rollout shipped: `functions/` directory with scaffolding and 5 functions
+total. The code sits compiled but unshipped; nothing executes until Ludosky
+enables Blaze + runs the deploy playbook at `/DEPLOY-ONCE-BLAZE-IS-READY.md`.
+
+Shipped functions (dormant):
+  - **Session A · Security**
+    - `onProfDelete` — deletes Auth user when `/professeurs/{uid}` is deleted
+    - `fedapayWebhook` — HTTP endpoint that receives FedaPay events and
+      writes new deadline server-side (closes F12 bypass)
+  - **Session B · Email pipeline (Resend-backed)**
+    - `subscriptionReminder` — scheduled daily at 00:00 Africa/Porto-Novo,
+      emails admin at 14/7/3 days before deadline + during 3-day grace period
+    - `onPreInscriptionStatusChange` — emails applicant when admin approves
+      or refuses (if they provided `emailParent` on the form)
+    - `testEmail` — optional HTTP smoke-test endpoint (delete after
+      verifying delivery works)
+
+Frontend changes shipped alongside Session B:
+  - `InscriptionFormPanel.tsx` — added optional "Email du parent" field
+  - `types/models.ts` — added `emailParent?` to `PreInscription` interface
+
+Sessions C/D pending:
+  - Session C: scheduled jobs (daily presence rollover, monthly civisme
+    purge, nightly Firestore backup with 30-day rotation + snapshot-on-rollover)
+  - Session D: frontend cleanup (remove `useArchiveRollover` lazy hook,
+    `useSchoolAbsences` batch delete, manual Purger button)
 
 **Also deferred — unrelated to Blaze**:
 

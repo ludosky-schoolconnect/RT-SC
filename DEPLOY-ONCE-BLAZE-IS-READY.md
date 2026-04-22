@@ -78,20 +78,64 @@ firebase functions:secrets:set FEDAPAY_WEBHOOK_SECRET --project schoolconnect-ho
 # ... etc for every school
 ```
 
-### 3c. (When you add email) Set Resend key
+### 3c. Resend + email secrets (Session B — email pipeline)
 
-Once you activate Session B (emails), you'll also need:
+Sessions A and B are both in the repo. If you're activating both at once,
+do these setup steps before Phase 4 (first deploy).
+
+**Step 1 — Create a Resend account**
+
+1. Go to https://resend.com and sign up (free tier = 3,000 emails/month,
+   more than enough for a long time)
+2. In Resend dashboard → API Keys → Create API Key
+3. Copy the key (starts with `re_...`). You only see it once — store it
+   somewhere you can retrieve later (Bitwarden, 1Password, etc.)
+
+**Step 2 — Decide on your "from" address**
+
+For dev/testing, the default `onboarding@resend.dev` works but ONLY
+delivers to your Resend account's own email. Production needs a verified
+domain.
+
+To use your own domain (recommended before real schools):
+1. Resend dashboard → Domains → Add Domain → enter e.g. `schoolconnect.bj`
+2. Add the DNS records Resend shows you (SPF, DKIM) at your domain registrar
+3. Wait a few minutes, click "Verify"
+4. Once verified, you can send from `<anything>@schoolconnect.bj`
+
+**Step 3 — Set the secrets per school**
 
 ```bash
-# Single shared Resend API key across all school projects (one Resend account)
+# Single Resend key, same for every school project
 firebase functions:secrets:set RESEND_API_KEY --project schoolconnect-nlg
+# (paste the re_... key)
 firebase functions:secrets:set RESEND_API_KEY --project schoolconnect-mag
 firebase functions:secrets:set RESEND_API_KEY --project schoolconnect-houeto
+# ... per school
 
-# Set EMAIL_FROM env var (not a secret, just config)
-firebase functions:config:set email.from="SchoolConnect <no-reply@schoolconnect.bj>" --project schoolconnect-nlg
-# Repeat per school
+# Testemail secret — make up any long random string, same one per school
+# You'll use this to curl-test delivery after first deploy
+firebase functions:secrets:set TESTEMAIL_SECRET --project schoolconnect-nlg
+firebase functions:secrets:set TESTEMAIL_SECRET --project schoolconnect-mag
+# ... per school
 ```
+
+**Step 4 — Set the EMAIL_FROM env var (not a secret, but configured per project)**
+
+In `functions/.env.<projectid>` (one file per school), write:
+
+```bash
+# functions/.env.schoolconnect-nlg
+EMAIL_FROM=SchoolConnect <onboarding@resend.dev>
+SCHOOL_APP_URL=https://schoolconnect-nlg.web.app
+```
+
+Firebase Functions automatically loads these when deploying to that project.
+If you own a domain and verified it in Resend, change to e.g.
+`EMAIL_FROM=SchoolConnect <no-reply@schoolconnect.bj>`.
+
+**Note on CLAUDE-BRIEFING**: if you add a new school, don't forget to
+create its `.env.<projectid>` file alongside the others.
 
 ---
 
@@ -109,7 +153,11 @@ firebase deploy --only functions --project schoolconnect-nlg
 # Expected output (abbreviated):
 #   ✔ functions[onProfDelete(us-central1)]: Successful create operation.
 #   ✔ functions[fedapayWebhook(us-central1)]: Successful create operation.
+#   ✔ functions[subscriptionReminder(us-central1)]: Successful create operation.
+#   ✔ functions[onPreInscriptionStatusChange(us-central1)]: Successful create operation.
+#   ✔ functions[testEmail(us-central1)]: Successful create operation.
 #   Function URL (fedapayWebhook): https://us-central1-schoolconnect-nlg.cloudfunctions.net/fedapayWebhook
+#   Function URL (testEmail): https://us-central1-schoolconnect-nlg.cloudfunctions.net/testEmail
 ```
 
 **Note the function URL** — you need it for the next step.
@@ -160,6 +208,76 @@ If the webhook didn't fire:
 - Confirm the secret in Phase 3 matches the one in FedaPay dashboard EXACTLY
 
 **Do NOT proceed to Phase 7 until Phase 6 works on at least one school.**
+
+---
+
+## Phase 6.5 — Verify email delivery (Session B)
+
+Before trusting automated emails to reach parents and admins, confirm
+the Resend pipeline end-to-end with the `testEmail` endpoint.
+
+Get the test URL from Phase 4 deploy output. Then from any shell:
+
+```bash
+curl -X POST \
+  "https://us-central1-schoolconnect-nlg.cloudfunctions.net/testEmail" \
+  -H "Content-Type: application/json" \
+  -d '{"to":"YOUR_EMAIL@gmail.com","secret":"<TESTEMAIL_SECRET>"}'
+```
+
+**Expected**:
+- HTTP 200 with `{"ok":true,"messageId":"..."}`
+- Email arrives in your inbox within ~10 seconds, subject
+  "SchoolConnect — test email"
+- Navy header, gold accent, readable body
+
+**If the email doesn't arrive**:
+1. Check Resend dashboard → Emails — did the send register?
+   - If NO: `RESEND_API_KEY` is wrong
+   - If YES but marked "failed": check the bounce reason
+2. Check `firebase functions:log --project <sid>` for errors
+3. If using a custom `EMAIL_FROM` domain, verify the domain is fully
+   verified in Resend (DNS records can take hours to propagate)
+4. Check spam folder — new sending domains often land there first;
+   warming up takes a few weeks of consistent volume
+
+**Testing the subscription reminder specifically**:
+
+The scheduled reminder runs at midnight Bénin time. To test manually
+without waiting:
+
+```bash
+# Trigger the function manually from your local shell (requires being
+# logged into firebase and having admin access to the project)
+firebase functions:shell --project schoolconnect-nlg
+# In the shell that opens:
+subscriptionReminder()
+```
+
+This runs it on-demand. To make it actually fire an email, temporarily
+set the subscription deadline to 7 days from now in Firestore, then
+run the function. Restore the real deadline after testing.
+
+**Testing the pre-inscription email**:
+
+1. Submit a test pre-inscription via the public form at
+   `https://schoolconnect-<id>.web.app/inscription`
+2. Include an email you own in the "Email du parent" field
+3. Log into admin dashboard, go to Inscriptions tab
+4. Approve or refuse the test dossier
+5. Email should arrive within ~10 seconds
+
+**Delete the `testEmail` endpoint after verification (optional)**:
+
+Once you've confirmed everything works, `testEmail` serves no production
+purpose. You can keep it (costs nothing when unused) or delete it:
+
+```bash
+firebase functions:delete testEmail --project schoolconnect-nlg --force
+```
+
+Remove the export from `functions/src/index.ts` to prevent it coming
+back on the next deploy.
 
 ---
 
