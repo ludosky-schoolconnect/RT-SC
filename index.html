@@ -30,9 +30,13 @@
     <meta name="twitter:description" content="Plateforme de gestion scolaire pour les établissements au Bénin." />
     <meta name="twitter:image" content="/favicon.svg" />
 
-    <!-- Icons + favicon -->
+    <!-- Icons + favicon.
+         SVG favicon is the default for modern browsers (crisp at any size).
+         PNG apple-touch-icon because iOS Safari prefers a raster, and
+         Chrome uses it as a fallback when the SVG manifest icon isn't
+         raster. The 192×192 is the Apple-recommended size. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
     <link rel="mask-icon" href="/favicon.svg" color="#0B2545" />
 
     <!-- PWA manifest. Per-school deploys overwrite manifest.json with
