@@ -44,7 +44,8 @@ import type {
   BulletinPeriodView,
 } from '@/lib/bulletinView'
 import type { EnrichedBulletinPeriodView } from '@/lib/bulletinEnrichment'
-import { statutLabel } from '@/lib/statutLabel'
+import type { Niveau } from '@/types/models'
+import { nextClasseLabel } from '@/lib/benin'
 
 // jspdf-autotable's RowInput type isn't reliably exported across versions,
 // so we use a structural alias loose enough to cover all cases we use.
@@ -746,50 +747,40 @@ function drawAnnualVerdictLine(
   view: BulletinAnnualView,
   yStart: number
 ): number {
-  // Mirrors the reference bulletins' three-option line:
-  //   "Admis(e) en …    Autorisé(e) à redoubler …    Exclu(e) pour …"
-  // We emphasize the one that matches view.statutAnnuel. The "next
-  // class" field is blank (we don't track it in the model); admin
-  // fills it by hand on the printed copy if needed.
+  // Session 3.1 — write one verdict sentence using the system's own
+  // computed `statutAnnuel`. The reference bulletins rendered three
+  // checkboxes because the teacher circled one by hand; we know the
+  // answer, so we state it. This also keeps the PDF honest — if the
+  // sentence is wrong the problem is the moyenne, not the bulletin.
+  //
+  //   Admis  → "Admise en 1ère" / "Admis en 5ème" / "Admise en classe supérieure"
+  //   Échoué → "Autorisée à redoubler en 2nde C1" / "Autorisé à redoubler en 6ème M2"
+  //
+  // We preserve the série only for the redoubler case because the
+  // student stays in the same exact class; for promotion we keep it to
+  // the niveau alone (the série follows automatically through
+  // second-cycle years).
   const y = yStart + 2
-  const genderSuffix = view.eleve.genre === 'F' ? '(e)' : ''
-  const statutGendered = statutLabel(
-    view.statutAnnuel,
-    view.eleve.genre === 'M' || view.eleve.genre === 'F' ? view.eleve.genre : null
-  )
+  const genre = view.eleve.genre === 'M' || view.eleve.genre === 'F' ? view.eleve.genre : null
+  const e = genre === 'F' ? 'e' : '' // feminine "e" suffix on past participles
+
+  let sentence: string
+  if (view.statutAnnuel === 'Admis') {
+    const nextLabel = nextClasseLabel(view.classe.niveau as Niveau)
+    sentence = `Admis${e} en ${nextLabel}`
+  } else {
+    // Échoué → redoubler the SAME class they just finished. Full
+    // class name (niveau + série + salle) gives the family the
+    // unambiguous label they'll see on the new year's roster.
+    sentence = `Autorisé${e} à redoubler en ${view.classe.nomComplet}`
+  }
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
+  doc.setFontSize(10.5)
   doc.setTextColor(...COLOR_NAVY)
-  doc.text(
-    `${statutGendered.toUpperCase()} — Décision finale`,
-    MARGIN_X,
-    y
-  )
+  doc.text(`DÉCISION DU CONSEIL : ${sentence.toUpperCase()}`, MARGIN_X, y + 3)
 
-  // Sub-line with the three canonical options, the matching one in
-  // solid black, the others dimmed.
-  const optAdmis = `Admis${genderSuffix} en`
-  const optRedouble = `Autorisé${genderSuffix} à redoubler`
-  const optExclu = `Exclu${genderSuffix} pour`
-  const options = [optAdmis, optRedouble, optExclu]
-  const highlighted =
-    view.statutAnnuel === 'Admis' ? 0 : view.statutAnnuel === 'Échoué' ? 1 : -1
-
-  let cursorX = MARGIN_X
-  const subY = y + 5
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8.5)
-  options.forEach((label, i) => {
-    const isActive = i === highlighted
-    doc.setTextColor(...(isActive ? COLOR_BLACK : COLOR_INK_400))
-    doc.setFont('helvetica', isActive ? 'bold' : 'normal')
-    const text = `☐ ${label} …………………………`
-    doc.text(text, cursorX, subY)
-    cursorX += doc.getTextWidth(text) + 2
-  })
-
-  return subY + 5
+  return y + 9
 }
 
 // ─── 10. Signatures (PP left, parents center, directrice right) ─

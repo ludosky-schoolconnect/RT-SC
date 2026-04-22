@@ -250,6 +250,15 @@ export interface BulletinAnnualView {
   signatureDirectrice?: string
   signaturePP?: string
   ppNom?: string
+
+  /* Bulletin v2 — observations + décision. Same fields as the period
+   * view so consumers that handle the union (e.g. the PDF renderer)
+   * can touch these properties safely. The annual editor UI isn't
+   * wired yet — these flow through the assembler from the stored
+   * Bulletin doc whenever they're present, and stay undefined when
+   * no one has set them. */
+  observationsChef?: string
+  decisionConseil?: DecisionConseil
 }
 
 export interface AssembleBulletinAnnualInput {
@@ -324,6 +333,13 @@ export function assembleBulletinAnnualView(
     signatureDirectrice: input.ecoleConfig.signatureDirectrice || undefined,
     signaturePP: input.profPrincipal?.signature || undefined,
     ppNom: input.profPrincipal?.nom || undefined,
+
+    // Bulletin v2 — observations + décision flow through the same way
+    // as on the period view. The annual editor UI isn't wired yet so
+    // these stay undefined in typical flows; when admin eventually
+    // gains an annual-editor surface they'll appear automatically.
+    observationsChef: input.annualBulletin.observationsChef,
+    decisionConseil: input.annualBulletin.decisionConseil,
   }
 }
 

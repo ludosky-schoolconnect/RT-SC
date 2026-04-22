@@ -48,6 +48,41 @@ export function nomClasse(c: Pick<Classe, 'cycle' | 'niveau' | 'serie' | 'salle'
 }
 
 /**
+ * Niveau progression map. Given the current niveau, returns the one
+ * a successful élève promotes to. Terminale has no successor (end of
+ * secondary — students take the BAC).
+ *
+ * Shared between the Année tab's class transition flow (admin tool)
+ * and the bulletin PDF's annual verdict line. Keeping it here ensures
+ * both consumers always agree on the next-level label.
+ */
+export const NEXT_NIVEAU: Partial<Record<Niveau, Niveau>> = {
+  '6ème': '5ème',
+  '5ème': '4ème',
+  '4ème': '3ème',
+  '3ème': '2nde',
+  '2nde': '1ère',
+  '1ère': 'Terminale',
+}
+
+/**
+ * Display label for the class an élève is promoted to when admitted.
+ * Per the Session 3.1 decision, we keep it to just the niveau and
+ * omit the série for second cycle (a student who passes 1ère C moves
+ * to "Tle"; the série follows them automatically so re-stating it in
+ * the verdict line is redundant).
+ *
+ * Falls back to the string "classe supérieure" when no successor
+ * exists (Terminale), since the bulletin verdict still needs to read
+ * as a complete sentence even for diplôme-terminal students.
+ */
+export function nextClasseLabel(niveau: Niveau): string {
+  const next = NEXT_NIVEAU[niveau]
+  if (!next) return 'classe supérieure'
+  return ABREV_NIVEAU[next] ?? next
+}
+
+/**
  * Niveaux available for a given cycle.
  */
 export function niveauxDuCycle(cycle: Cycle): Niveau[] {

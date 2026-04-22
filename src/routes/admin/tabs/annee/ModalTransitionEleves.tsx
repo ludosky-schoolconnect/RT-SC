@@ -51,8 +51,8 @@ import {
   type TransitionResult,
   type TransitionStatut,
 } from '@/lib/rollover'
-import { nomClasse } from '@/lib/benin'
-import type { Classe, Eleve, Niveau } from '@/types/models'
+import { nomClasse, NEXT_NIVEAU } from '@/lib/benin'
+import type { Classe, Eleve } from '@/types/models'
 import { cn } from '@/lib/cn'
 
 interface ModalTransitionElevesProps {
@@ -67,16 +67,6 @@ interface ModalTransitionElevesProps {
 }
 
 type Step = 'select-class' | 'classify' | 'destinations' | 'review' | 'execute' | 'done'
-
-// Niveau progression — used to suggest the next-level class
-const NEXT_NIVEAU: Partial<Record<Niveau, Niveau>> = {
-  '6ème': '5ème',
-  '5ème': '4ème',
-  '4ème': '3ème',
-  '3ème': '2nde',
-  '2nde': '1ère',
-  '1ère': 'Terminale',
-}
 
 export function ModalTransitionEleves({
   open,
