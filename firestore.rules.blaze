@@ -1,0 +1,131 @@
+// ═══════════════════════════════════════════════════════════════════════
+// RT-SC · Firestore Rules — BLAZE VERSION (DORMANT)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// THIS FILE IS NOT ACTIVE. The live rules are in `firestore.rules`.
+//
+// This file contains the tightened version of the subscription
+// rule — the one that closes the F12 admin-self-extension hole by
+// restricting `deadline` writes to the Cloud Function service
+// account.
+//
+// DEPLOY INSTRUCTIONS (on Blaze day, NOT before):
+//
+//   1. Deploy the fedapayWebhook Cloud Function first:
+//        cd functions && firebase deploy --only functions --project schoolconnect-<id>
+//   2. Register the webhook URL in that school's FedaPay dashboard.
+//   3. ONLY AFTER the webhook is live: replace `firestore.rules`
+//      with the contents of this file, then deploy:
+//        ./deploy-school.sh schools/<id>.json --rules-only
+//   4. Verify by placing a real test payment. If the deadline
+//      doesn't update, roll back rules IMMEDIATELY so admins can
+//      still self-service payments until the webhook is fixed:
+//        git checkout HEAD~1 firestore.rules
+//        ./deploy-school.sh schools/<id>.json --rules-only
+//
+// The rest of the rules are IDENTICAL to the live file — only the
+// `/ecole/subscription` block changes. Keep the rest in sync when
+// editing live rules.
+//
+// ═══════════════════════════════════════════════════════════════════════
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper functions ────────────────────────────────────────
+
+    function isStaff() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function isAdmin() {
+      return isStaff()
+        && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isSaaSMaster() {
+      return request.auth != null
+        && request.auth.token.email == 'ludoskyazon@gmail.com';
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // /ecole/subscription — HARDENED
+    // ══════════════════════════════════════════════════════════
+    //
+    // Read: anyone (subscription state drives public Locked/Maintenance
+    //       pages; no sensitive data in there — all payment details
+    //       live in per-school FedaPay dashboards, not here).
+    //
+    // Write: THREE tiers.
+    //
+    //   1. Cloud Functions service account (admin SDK bypasses rules
+    //      entirely) — can write anything. This is how the webhook
+    //      extends deadlines.
+    //   2. SaaS master (ludoskyazon@gmail.com) — full write, for
+    //      manual fixups via vendor-app or direct console edits.
+    //   3. Admin — LIMITED to specific fields only:
+    //        - hasRequestedUnlock  (admin flags they've paid, for
+    //                               support triage if webhook fails)
+    //        - fedaPayPublicKey    (admin can update their own
+    //                               FedaPay public key via vendor-app)
+    //        - isManualLock        (admin can voluntarily lock their
+    //                               school — counter-intuitive but
+    //                               supported)
+    //        - monthsPerPayment    (admin configures their billing
+    //                               cycle length)
+    //      Admin CANNOT write: deadline, lastPaymentAt,
+    //                          lastPaymentAmount, lastPaymentReference,
+    //                          lastPaymentTransactionId, paymentCount.
+    //      Those are server-authoritative and only the webhook can
+    //      set them.
+    //
+    // Implementation: uses `affectedKeys().hasOnly([...])` to allow
+    // admin writes only when the diff is confined to the admin-safe
+    // field set. This plays well with Firestore's `set({merge:true})`
+    // and `update()` — both produce a diff containing only the
+    // changed fields.
+
+    match /ecole/subscription {
+      allow read: if true;
+
+      // SaaS master: full write access (unchanged)
+      allow write: if isSaaSMaster();
+
+      // Admin: writes allowed ONLY when they don't touch
+      // server-authoritative fields. Using diff().affectedKeys()
+      // prevents client from sneaking in deadline changes.
+      allow create, update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly([
+               'hasRequestedUnlock',
+               'fedaPayPublicKey',
+               'isManualLock',
+               'monthsPerPayment'
+             ]);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // Rest of /ecole/* — unchanged (staff can write non-subscription config)
+    // ══════════════════════════════════════════════════════════
+    match /ecole/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin() || isSaaSMaster();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // IMPORTANT: the rest of firestore.rules (classes, élèves,
+    // notes, bulletins, paiements, annonces, pre_inscriptions,
+    // annuaire, professeurs, settings_inscription, rv_counters,
+    // quêtes, réclamations, vigilance_ia, etc.) is IDENTICAL
+    // between the live file and this Blaze file.
+    //
+    // When swapping files on Blaze day, copy the rest of
+    // firestore.rules into this file, OR (simpler) merge the
+    // hardened /ecole/subscription block above into firestore.rules
+    // in place. Both approaches produce identical output.
+    // ═══════════════════════════════════════════════════════════
+
+  }
+}

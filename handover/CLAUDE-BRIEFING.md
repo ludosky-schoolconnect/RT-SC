@@ -230,6 +230,18 @@ Recent rule additions:
 
 ## 5 · What's NOT done / future work
 
+**Blaze foundation (dormant in `/functions/`)** — Session A of the Blaze
+rollout shipped: `functions/` directory with scaffolding, `onProfDelete`
+trigger, and `fedapayWebhook` HTTP function. The code sits compiled but
+unshipped; nothing executes until Ludosky enables Blaze + runs the deploy
+playbook at `/DEPLOY-ONCE-BLAZE-IS-READY.md`. See `functions/README.md`
+for per-function notes. Sessions B/C/D pending:
+  - Session B: email pipeline (Resend, bulletin/paiement/absence/annonce/preinscription triggers)
+  - Session C: scheduled jobs (daily rollover, monthly civisme purge, weekly subscription reminder, nightly backup)
+  - Session D: frontend cleanup (remove `useArchiveRollover`, `useSchoolAbsences` batch delete, manual Purger button)
+
+**Also deferred — unrelated to Blaze**:
+
 **Theme switching (dark / sepia)** — deferred. The CSS variable infrastructure is in place (Step B). The user-facing switcher and the dark/sepia palettes have been removed from the codebase. Revisiting this later requires:
 - Audit how `navy` token is used (brand button bg vs. primary text — overloaded)
 - Introduce `text-primary` separate from `bg-brand-navy`
