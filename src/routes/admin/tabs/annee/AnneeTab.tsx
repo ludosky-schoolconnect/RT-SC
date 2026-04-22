@@ -11,6 +11,7 @@ import { Section, SectionHeader } from '@/components/layout/Section'
 import { SchoolIdentityCard } from './SchoolIdentityCard'
 import { ActiveYearCard } from './ActiveYearCard'
 import { BulletinConfigCard } from './BulletinConfigCard'
+import { SignatureDirectriceCard } from './SignatureDirectriceCard'
 import { MatieresEditorCard } from './MatieresEditorCard'
 import { CoefficientsEditorCard } from './CoefficientsEditorCard'
 import { DangerZoneCard } from './DangerZoneCard'
@@ -34,6 +35,7 @@ export function AnneeTab() {
           <SchoolIdentityCard />
           <ActiveYearCard />
           <BulletinConfigCard />
+          <SignatureDirectriceCard />
         </div>
 
         {/* 2. Finances — scolarité + gratuité. Admin-only; the caissier

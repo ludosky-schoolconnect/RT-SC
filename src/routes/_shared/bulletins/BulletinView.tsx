@@ -15,7 +15,7 @@
  */
 
 import { motion } from 'framer-motion'
-import { Award, FileText, Users, ShieldAlert } from 'lucide-react'
+import { Award, FileText, Users, ShieldAlert, MessageSquareQuote } from 'lucide-react'
 import type {
   BulletinAnnualView,
   BulletinPeriodView,
@@ -249,6 +249,14 @@ function PeriodeBody({ view }: { view: BulletinPeriodView }) {
             <DisciplineCard stats={enriched.disciplineStats} />
           )}
         </div>
+      )}
+
+      {/* Observations du chef + décision — only when at least one is set */}
+      {(enriched.observationsChef || enriched.decisionConseil) && (
+        <ObservationsDisplay
+          observations={enriched.observationsChef}
+          decision={enriched.decisionConseil}
+        />
       )}
     </div>
   )
@@ -484,6 +492,59 @@ function StatLine({
         {value}
       </dd>
     </div>
+  )
+}
+
+// ─── Observations + décision display (Bulletin v2, Session 2) ────
+//
+// Gold-accent block rendered at the bottom of a period bulletin when
+// either field is populated. Purely read-only — admin/PP edit these
+// from the BulletinObservationsEditor inside the detail modal; here
+// we just present them to everyone who can read the bulletin (élève,
+// parent, prof, admin).
+
+function ObservationsDisplay({
+  observations,
+  decision,
+}: {
+  observations?: string
+  decision?: NonNullable<BulletinPeriodView['decisionConseil']>
+}) {
+  if (!observations && !decision) return null
+  return (
+    <section
+      className="mt-4 rounded-lg border-[1.5px] border-gold/40 bg-gold-pale/40 px-4 py-3"
+      aria-label="Observations et décision du conseil"
+    >
+      <header className="flex items-center justify-between gap-2 pb-2 border-b border-gold/30">
+        <div className="flex items-center gap-2">
+          <MessageSquareQuote
+            className="h-4 w-4 text-gold-dark shrink-0"
+            aria-hidden
+          />
+          <h3 className="text-[0.7rem] font-bold uppercase tracking-widest text-gold-dark">
+            Observations &amp; décision
+          </h3>
+        </div>
+        {decision && (
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full border-[1.5px] border-gold/50 bg-white',
+              'px-3 py-1 text-[0.7rem] font-bold tracking-wide text-gold-dark uppercase'
+            )}
+          >
+            {decision}
+          </span>
+        )}
+      </header>
+      {observations && (
+        <p className="mt-2 text-[0.8125rem] leading-relaxed text-ink-700 italic">
+          <span className="text-gold-dark font-bold not-italic">«&nbsp;</span>
+          {observations}
+          <span className="text-gold-dark font-bold not-italic">&nbsp;»</span>
+        </p>
+      )}
+    </section>
   )
 }
 

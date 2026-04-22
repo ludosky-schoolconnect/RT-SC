@@ -17,6 +17,7 @@ import type {
   BulletinConfig,
   Classe,
   CoefficientsDoc,
+  DecisionConseil,
   EcoleConfig,
   Eleve,
   Note,
@@ -87,6 +88,11 @@ export interface BulletinPeriodView {
   mention: 'Excellent' | 'Très bien' | 'Bien' | 'Passable' | 'Insuffisant'
   estVerrouille: boolean
   dateCalcul: string  // ISO
+
+  /* Bulletin v2 — editor-authored fields, passed through from the Bulletin doc.
+   * Present on both the base view and the enriched view (spread preserves them). */
+  observationsChef?: string
+  decisionConseil?: DecisionConseil
 }
 
 export interface AssembleBulletinPeriodInput {
@@ -178,6 +184,12 @@ export function assembleBulletinPeriodView(
     mention: mentionFor(input.bulletin.moyenneGenerale),
     estVerrouille: input.bulletin.estVerrouille,
     dateCalcul: input.bulletin.dateCalcul,
+
+    // Bulletin v2 — forward the editor-authored fields. They're
+    // optional on the source doc so we only set them when present,
+    // keeping legacy bulletins untouched.
+    observationsChef: input.bulletin.observationsChef,
+    decisionConseil: input.bulletin.decisionConseil,
   }
 }
 

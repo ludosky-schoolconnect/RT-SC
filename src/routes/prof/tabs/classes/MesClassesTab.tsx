@@ -24,6 +24,7 @@ import { motion } from 'framer-motion'
 import { ModalParentCodes } from './ModalParentCodes'
 import { ModalAbsencesClasse } from '@/routes/_shared/absences/ModalAbsencesClasse'
 import { ExamCountdownWidget } from '@/components/ExamCountdownWidget'
+import { MonProfilSection } from './MonProfilSection'
 
 export function MesClassesTab() {
   const profil = useAuthStore((s) => s.profil)
@@ -50,6 +51,8 @@ export function MesClassesTab() {
   return (
     <Section>
       <ExamCountdownWidget mode="prof" classLevels={classLevels} />
+
+      <MonProfilSection />
 
       <SectionHeader
         kicker="Référence"

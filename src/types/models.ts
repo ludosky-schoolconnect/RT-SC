@@ -85,6 +85,15 @@ export interface EcoleConfig {
    * lastArchivedAt to populate the success banner text.
    */
   lastArchivedAnnee?: string
+  /**
+   * Bulletin v2 — Directrice signature, stored as a base64-encoded PNG
+   * data URL (no Firebase Storage dependency). Drawn by the admin via
+   * SignatureDrawCanvas in the Année tab. When present, rendered at
+   * the bottom of every bulletin in the "Le Directeur / La Directrice"
+   * signature block. When absent, the signature block shows the name
+   * line with no image above it.
+   */
+  signatureDirectrice?: string
 }
 
 export interface PeriodeRange {
@@ -206,6 +215,15 @@ export interface Professeur {
   role: ProfesseurRole
   statut: ProfesseurStatut
   createdAt: Timestamp
+  /**
+   * Bulletin v2 — Personal signature stored as a base64-encoded PNG
+   * data URL (no Firebase Storage dependency). Drawn by the prof from
+   * their "Mon profil" section on MesClassesTab. When the prof is PP
+   * of a class, this signature is rendered on every bulletin under
+   * the "Le/La Professeur Principal" block. When absent, the slot
+   * shows a blank signature line (preserving legacy behavior).
+   */
+  signature?: string
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -376,6 +394,19 @@ export interface ArchivedAbsence {
 // Doc ID = periode (e.g. "Trimestre 1")
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Bulletin v2 — Decision rendered by the conseil de classe.
+ * Written by admin or PP from the BulletinObservationsEditor.
+ * Stored as a string so that a future "other" free-text decision
+ * stays easy to add without a schema migration.
+ */
+export type DecisionConseil =
+  | "Tableau d'Honneur"
+  | 'Félicitations'
+  | 'Encouragement'
+  | 'Avertissement'
+  | 'Blâme'
+
 export interface Bulletin {
   /**
    * Period name (e.g. "Trimestre 1", "Semestre 2") for per-period bulletins.
@@ -401,6 +432,21 @@ export interface Bulletin {
   moyenneAnnuelle?: number
   /** Computed status — Admis if moyenneAnnuelle ≥ 10 */
   statutAnnuel?: 'Admis' | 'Échoué'
+
+  // ─── Bulletin v2 — editor-authored fields ───
+  /**
+   * Observations du chef d'établissement — free-text commentary written
+   * by admin OR the classe's professeur principal. Max 500 chars enforced
+   * client-side. Displayed in the gold-accent observations block at the
+   * bottom of the bulletin when present. Absent when unset.
+   */
+  observationsChef?: string
+  /**
+   * Décision du conseil de classe. One of five standard mentions, or
+   * undefined when no decision has been rendered. Rendered as a badge
+   * within the observations block.
+   */
+  decisionConseil?: DecisionConseil
 }
 
 // ─────────────────────────────────────────────────────────────

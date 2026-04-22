@@ -12,7 +12,7 @@
  * and triggers a browser download.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Download, FileText } from 'lucide-react'
 import {
   Modal,
@@ -30,9 +30,13 @@ import {
   useAnnualBulletinView,
   usePeriodBulletinView,
 } from '@/hooks/useBulletinView'
+import { useAuthStore } from '@/stores/auth'
+import { useClasses } from '@/hooks/useClasses'
 import { savePdf } from '@/lib/pdf/bulletinPdf'
 import type { Periode } from '@/types/models'
+import type { EnrichedBulletinPeriodView } from '@/lib/bulletinEnrichment'
 import { BulletinView } from './BulletinView'
+import { BulletinObservationsEditor } from './BulletinObservationsEditor'
 
 interface ModalBulletinDetailProps {
   open: boolean
@@ -71,6 +75,29 @@ export function ModalBulletinDetail({
   const view = mode === 'periode' ? periodQuery.data : annualQuery.data
   const errorMissing = !isLoading && !view
 
+  // ─── Edit permission (Bulletin v2, Session 2) ────────────────
+  // Observations + décision are editable by:
+  //   - any admin
+  //   - the class's professeur principal (profPrincipalId === profil.id)
+  // Everyone else (plain prof, élève, parent) sees read-only display.
+  const profil = useAuthStore((s) => s.profil)
+  const { data: allClasses = [] } = useClasses()
+  const canEdit = useMemo(() => {
+    if (!profil) return false
+    if (profil.role === 'admin') return true
+    const classe = allClasses.find((c) => c.id === classeId)
+    if (!classe) return false
+    return classe.profPrincipalId === profil.id
+  }, [profil, allClasses, classeId])
+
+  // Cast once for the editor — the period query's data is an
+  // EnrichedBulletinPeriodView, so observationsChef/decisionConseil
+  // flow through even for admins who come in via a non-PP surface.
+  const periodView =
+    mode === 'periode' && view
+      ? (view as EnrichedBulletinPeriodView)
+      : null
+
   useEffect(() => {
     // No-op for now; future: scroll to top when open
   }, [open])
@@ -108,6 +135,15 @@ export function ModalBulletinDetail({
         ) : (
           view && (
             <ErrorBoundary label="BulletinView">
+              {canEdit && mode === 'periode' && periodView && periode && (
+                <BulletinObservationsEditor
+                  classeId={classeId}
+                  eleveId={eleveId}
+                  periode={periode}
+                  currentObservations={periodView.observationsChef}
+                  currentDecision={periodView.decisionConseil}
+                />
+              )}
               <BulletinView view={view} mode={mode} />
             </ErrorBoundary>
           )

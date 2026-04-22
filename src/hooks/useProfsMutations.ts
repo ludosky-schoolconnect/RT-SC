@@ -419,3 +419,60 @@ export function useUpdateProfRole() {
     },
   })
 }
+
+// ─── Update own signature (Bulletin v2, Session 2) ──────────
+//
+// A prof (any role, really — admin, prof, or caissier, though only
+// PPs actually render theirs on bulletins) saves a base64 PNG
+// signature to their own /professeurs/{uid} doc.
+//
+// This is a SELF-write — Firestore rules permit the auth'd user to
+// write their own {signature} field. Admins can also still update
+// any prof via the general update rule. See firestore.rules for the
+// scoped allow rule.
+//
+// We deliberately keep this separate from the admin's profUpdate
+// flow so the write is always one field, auditable, and cache-
+// targeted: onSettled refreshes the profs list (admin may also be
+// viewing the same prof via a dashboard).
+
+export interface UpdateOwnProfSignatureInput {
+  profId: string
+  /** Base64 PNG data URL from SignatureDrawCanvas. Empty string clears. */
+  signature: string
+}
+
+export function useUpdateOwnProfSignature() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ profId, signature }: UpdateOwnProfSignatureInput) => {
+      // Use setDoc+merge so the same mutation handles both set and
+      // clear cases cleanly. An empty string clears by overwriting
+      // the field with '' — Firestore treats that as a valid value
+      // (not a deletion). The UI checks truthiness before rendering,
+      // so '' reads as "no signature".
+      await setDoc(
+        docRef(professeurDoc(profId)),
+        { signature },
+        { merge: true }
+      )
+    },
+    onMutate: async ({ profId, signature }) => {
+      await qc.cancelQueries({ queryKey: ['profs'] })
+      const previous = qc.getQueryData<Professeur[]>(['profs'])
+      qc.setQueryData<Professeur[]>(['profs'], (old) =>
+        (old ?? []).map((p) =>
+          p.id === profId ? { ...p, signature } : p
+        )
+      )
+      return { previous }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(['profs'], ctx.previous)
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['profs'] })
+    },
+  })
+}

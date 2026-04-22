@@ -42,6 +42,15 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/classes/$(classeId)/eleves/$(eleveId)).data.active_parent_session_uid == request.auth.uid;
     }
 
+    // Bulletin v2 (Session 2) — the class's professeur principal can
+    // edit observations + décision on their students' bulletins. A
+    // classe without a PP yields false here (missing field → comparison
+    // evaluates to false, safe default).
+    function isPPOfClasse(classeId) {
+      return isStaff()
+        && get(/databases/$(database)/documents/classes/$(classeId)).data.get('profPrincipalId', '') == request.auth.uid;
+    }
+
     // ══════════════════════════════════════════════════════════
     // 🔍 COLLECTION GROUP READS
     // ══════════════════════════════════════════════════════════
@@ -75,6 +84,12 @@ service cloud.firestore {
       allow write: if isAdmin() || isSaaSMaster();
     }
     match /ecole/{document=**} {
+      // Bulletin v2 (Session 2) — this catchall already grants admin
+      // write access to /ecole/config.signatureDirectrice (the base64
+      // PNG signature of the directrice). No separate rule is needed
+      // for that field; if future tightening narrows this block, add
+      // a dedicated allow-update rule scoped to signatureDirectrice
+      // so the Année tab's SignatureDirectriceCard keeps working.
       allow read: if true;
       allow write: if isAdmin() || isSaaSMaster();
     }
@@ -303,6 +318,22 @@ service cloud.firestore {
                     || isParentOf(classeId, eleveId)
                     || isStaff();
         allow write: if isStaff();
+
+        // Bulletin v2 (Session 2) — observations du chef + décision du
+        // conseil. Editable by admin OR by the class's professeur
+        // principal, scoped strictly to these two fields.
+        //
+        // This rule is additive to the general `isStaff()` write above
+        // — it does not tighten existing engine writes. Its purpose is
+        // to DOCUMENT the intended editor-writer set so future rules
+        // tightening (e.g. restricting engine writes to admin-only)
+        // won't accidentally revoke PP editing rights.
+        //
+        // Uses hasOnly() so a write that also touches other fields
+        // (e.g. moyenneGenerale) must still satisfy the broader rule.
+        allow update: if (isAdmin() || isPPOfClasse(classeId))
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['observationsChef', 'decisionConseil']);
       }
 
       match /colles/{document=**} {
@@ -351,6 +382,16 @@ service cloud.firestore {
                     && request.resource.data.statut == 'en_attente';
 
       allow update, delete: if isAdmin() || isSaaSMaster();
+
+      // Bulletin v2 (Session 2) — profs may update ONLY their own
+      // `signature` field on their own professeur doc. Scoped with
+      // hasOnly() so a prof cannot elevate their role, flip statut,
+      // or edit any other profile field via this allowance.
+      allow update: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['signature']);
+
       allow read: if request.auth != null;
     }
   }
