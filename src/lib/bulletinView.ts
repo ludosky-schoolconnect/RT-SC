@@ -22,6 +22,7 @@ import type {
   Eleve,
   Note,
   Periode,
+  Professeur,
 } from '@/types/models'
 import { nomClasse } from '@/lib/benin'
 
@@ -93,6 +94,16 @@ export interface BulletinPeriodView {
    * Present on both the base view and the enriched view (spread preserves them). */
   observationsChef?: string
   decisionConseil?: DecisionConseil
+
+  /* Bulletin v2, Session 3 — signature artifacts.
+   * Passed through from EcoleConfig + the Professeur Principal's doc so
+   * BOTH the on-screen view and the PDF renderer can show them consistently.
+   * All optional: missing signatures degrade gracefully to blank lines
+   * (matching legacy bulletin appearance). */
+  signatureDirectrice?: string
+  signaturePP?: string
+  /** Printed name of the Professeur Principal, shown under the signature. */
+  ppNom?: string
 }
 
 export interface AssembleBulletinPeriodInput {
@@ -103,6 +114,11 @@ export interface AssembleBulletinPeriodInput {
   classe: Classe
   bulletinConfig: BulletinConfig
   ecoleConfig: EcoleConfig
+  /** Bulletin v2, Session 3 — the class's Professeur Principal, if any.
+   *  When provided, their `signature` + `nom` flow into the view so the
+   *  on-screen renderer AND the PDF renderer both show the PP signature.
+   *  Omitting it is always safe — the view just carries no PP signature. */
+  profPrincipal?: Professeur | null
 }
 
 export function assembleBulletinPeriodView(
@@ -190,6 +206,13 @@ export function assembleBulletinPeriodView(
     // keeping legacy bulletins untouched.
     observationsChef: input.bulletin.observationsChef,
     decisionConseil: input.bulletin.decisionConseil,
+
+    // Bulletin v2, Session 3 — signatures + PP identity. Only set
+    // when the upstream data is actually present so missing values
+    // stay `undefined` (not empty strings) for predictable reads.
+    signatureDirectrice: input.ecoleConfig.signatureDirectrice || undefined,
+    signaturePP: input.profPrincipal?.signature || undefined,
+    ppNom: input.profPrincipal?.nom || undefined,
   }
 }
 
@@ -222,6 +245,11 @@ export interface BulletinAnnualView {
 
   estVerrouille: boolean
   dateCalcul: string
+
+  /* Bulletin v2, Session 3 — signature artifacts, same shape as period view. */
+  signatureDirectrice?: string
+  signaturePP?: string
+  ppNom?: string
 }
 
 export interface AssembleBulletinAnnualInput {
@@ -232,6 +260,8 @@ export interface AssembleBulletinAnnualInput {
   classe: Classe
   bulletinConfig: BulletinConfig
   ecoleConfig: EcoleConfig
+  /** Bulletin v2, Session 3 — Professeur Principal of the class. Optional. */
+  profPrincipal?: Professeur | null
 }
 
 export function assembleBulletinAnnualView(
@@ -288,6 +318,12 @@ export function assembleBulletinAnnualView(
 
     estVerrouille: input.annualBulletin.estVerrouille,
     dateCalcul: input.annualBulletin.dateCalcul,
+
+    // Bulletin v2, Session 3 — signatures + PP identity (same pattern
+    // as the period assembler).
+    signatureDirectrice: input.ecoleConfig.signatureDirectrice || undefined,
+    signaturePP: input.profPrincipal?.signature || undefined,
+    ppNom: input.profPrincipal?.nom || undefined,
   }
 }
 

@@ -47,6 +47,7 @@ import {
   collesCol,
   elevesCol,
   notesCol,
+  professeurDoc,
 } from '@/lib/firestore-keys'
 import {
   assembleBulletinAnnualView,
@@ -70,6 +71,7 @@ import type {
   Eleve,
   Note,
   Periode,
+  Professeur,
 } from '@/types/models'
 
 const FIVE_MIN = 5 * 60_000
@@ -123,6 +125,22 @@ export function usePeriodBulletinView(args: {
       if (!classeSnap.exists()) return null
       const classe = { id: classeSnap.id, ...(classeSnap.data() as Omit<Classe, 'id'>) }
 
+      // 3b. Professeur Principal doc — Bulletin v2, Session 3. Fetched
+      //     only when the class has one assigned. Missing PP is NOT an
+      //     error — the view simply carries no PP signature. Read is
+      //     public under the current rules (staff read all profs), so
+      //     no permission concerns here.
+      let profPrincipal: Professeur | null = null
+      if (classe.profPrincipalId) {
+        const ppSnap = await getDoc(doc(db, professeurDoc(classe.profPrincipalId)))
+        if (ppSnap.exists()) {
+          profPrincipal = {
+            id: ppSnap.id,
+            ...(ppSnap.data() as Omit<Professeur, 'id'>),
+          }
+        }
+      }
+
       // 4. Notes for this élève × period
       const notesSnap = await getDocs(
         query(collection(db, notesCol(classeId, eleveId)), where('periode', '==', periode))
@@ -163,6 +181,7 @@ export function usePeriodBulletinView(args: {
         classe,
         bulletinConfig,
         ecoleConfig,
+        profPrincipal,
       })
 
       return { baseView, absences, colles, civismeHistory }
@@ -263,6 +282,18 @@ export function useAnnualBulletinView(args: {
       if (!classeSnap.exists()) return null
       const classe = { id: classeSnap.id, ...(classeSnap.data() as Omit<Classe, 'id'>) }
 
+      // 4b. Professeur Principal — same pattern as the period variant.
+      let profPrincipal: Professeur | null = null
+      if (classe.profPrincipalId) {
+        const ppSnap = await getDoc(doc(db, professeurDoc(classe.profPrincipalId)))
+        if (ppSnap.exists()) {
+          profPrincipal = {
+            id: ppSnap.id,
+            ...(ppSnap.data() as Omit<Professeur, 'id'>),
+          }
+        }
+      }
+
       return assembleBulletinAnnualView({
         annualBulletin,
         periodBulletins,
@@ -270,6 +301,7 @@ export function useAnnualBulletinView(args: {
         classe,
         bulletinConfig,
         ecoleConfig,
+        profPrincipal,
       })
     },
   })

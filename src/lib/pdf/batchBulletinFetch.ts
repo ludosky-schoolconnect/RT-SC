@@ -25,6 +25,7 @@ import {
   notesCol,
   classesCol,
   elevesCol,
+  professeurDoc,
 } from '@/lib/firestore-keys'
 import {
   assembleBulletinAnnualView,
@@ -41,6 +42,7 @@ import type {
   Periode,
   EcoleConfig,
   BulletinConfig,
+  Professeur,
 } from '@/types/models'
 
 interface SharedContext {
@@ -48,6 +50,11 @@ interface SharedContext {
   coefficients: Record<string, number>
   ecoleConfig: EcoleConfig
   bulletinConfig: BulletinConfig
+  /** Bulletin v2, Session 3 — the class's Professeur Principal, fetched
+   *  once per batch so each student's bulletin can carry the PP's
+   *  signature + printed name without N extra reads. `null` when the
+   *  class has no PP or the PP doc is missing. */
+  profPrincipal: Professeur | null
 }
 
 async function fetchSharedContext(
@@ -63,7 +70,21 @@ async function fetchSharedContext(
   const coefSnap = await getDoc(doc(db, `ecole/coefficients_${targetId}`))
   const coefficients = coefSnap.exists() ? (coefSnap.data() as Record<string, number>) : {}
 
-  return { classe, coefficients, ecoleConfig, bulletinConfig }
+  // Bulletin v2, Session 3 — optional PP fetch. One extra read per batch
+  // regardless of class size. Missing PP is tolerated (signature stays
+  // blank on every printed bulletin, matching legacy behavior).
+  let profPrincipal: Professeur | null = null
+  if (classe.profPrincipalId) {
+    const ppSnap = await getDoc(doc(db, professeurDoc(classe.profPrincipalId)))
+    if (ppSnap.exists()) {
+      profPrincipal = {
+        id: ppSnap.id,
+        ...(ppSnap.data() as Omit<Professeur, 'id'>),
+      }
+    }
+  }
+
+  return { classe, coefficients, ecoleConfig, bulletinConfig, profPrincipal }
 }
 
 async function fetchOneElevePeriodView(
@@ -100,6 +121,7 @@ async function fetchOneElevePeriodView(
     classe: ctx.classe,
     bulletinConfig: ctx.bulletinConfig,
     ecoleConfig: ctx.ecoleConfig,
+    profPrincipal: ctx.profPrincipal,
   })
 }
 
@@ -138,6 +160,7 @@ async function fetchOneEleveAnnualView(
     classe: ctx.classe,
     bulletinConfig: ctx.bulletinConfig,
     ecoleConfig: ctx.ecoleConfig,
+    profPrincipal: ctx.profPrincipal,
   })
 }
 
