@@ -183,34 +183,34 @@ export default function WelcomePage() {
       {/* ═══════════════════════════════════════════════════════
           MAIN — greeting, roles, stats, footer
           ═══════════════════════════════════════════════════════ */}
-      <main className="max-w-[640px] mx-auto px-6 py-10">
+      <main className="max-w-[640px] mx-auto px-6 py-8">
         {/* Greeting block */}
         <motion.section
-          className="text-center mb-10"
+          className="text-center mb-8"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
         >
-          <div className="text-[0.62rem] font-body font-semibold tracking-[0.35em] uppercase text-gold mb-2.5">
+          <div className="text-[0.62rem] font-body font-semibold tracking-[0.35em] uppercase text-gold mb-2">
             Bienvenue
           </div>
           <h2
-            className="font-display font-medium text-white mb-1.5 leading-none"
+            className="font-display font-medium text-white mb-1 leading-none"
             style={{
-              fontSize: 'clamp(2rem, 8vw, 2.75rem)',
+              fontSize: 'clamp(1.75rem, 7vw, 2.25rem)',
               letterSpacing: '-0.01em',
             }}
           >
             {greeting}.
           </h2>
-          <p className="font-display italic text-white/70 text-base">
+          <p className="font-display italic text-white/70 text-[0.95rem]">
             Qui êtes-vous&nbsp;?
           </p>
         </motion.section>
 
         {/* Role cards — editorial numbered list */}
         <motion.div
-          className="mb-10"
+          className="mb-7"
           initial="hidden"
           animate="show"
           variants={{
@@ -235,19 +235,18 @@ export default function WelcomePage() {
                 <Link
                   to={role.to}
                   className={cn(
-                    'group block relative py-7',
+                    'group block relative py-[1.125rem]',
                     !isLast && 'border-b border-white/[0.1]',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 focus-visible:rounded'
                   )}
                 >
                   {/* Top row: Roman numeral + title, left-aligned baseline */}
-                  <div className="flex items-baseline gap-4 mb-2">
+                  <div className="flex items-baseline gap-3.5 mb-1">
                     <span
                       className="font-display italic text-gold font-medium shrink-0"
                       style={{
-                        fontSize: '1.05rem',
-                        letterSpacing: '0.02em',
-                        minWidth: '2.25rem',
+                        fontSize: '0.85rem',
+                        minWidth: '1.5rem',
                       }}
                     >
                       {role.number}.
@@ -255,32 +254,35 @@ export default function WelcomePage() {
                     <span
                       className="font-display text-white font-semibold leading-none uppercase"
                       style={{
-                        fontSize: 'clamp(1.375rem, 6vw, 1.75rem)',
-                        letterSpacing: '0.04em',
+                        fontSize: '1.25rem',
+                        letterSpacing: '0.06em',
                       }}
                     >
                       {role.title}
                     </span>
                   </div>
 
-                  {/* Italic description, indented under title */}
+                  {/* Regular-weight description (no italic), indented under title */}
                   <p
-                    className="font-display italic text-white/70 mb-3.5 leading-[1.5]"
-                    style={{ fontSize: '0.95rem', paddingLeft: '3.25rem' }}
+                    className="font-body text-white/65 mb-2 leading-[1.45]"
+                    style={{
+                      fontSize: '0.78rem',
+                      paddingLeft: '2.375rem',
+                    }}
                   >
                     {role.description}
                   </p>
 
-                  {/* CTA: "Accéder à mon espace →" — same indent */}
+                  {/* CTA: "Accéder à mon espace →" — compact tracked caps */}
                   <div
-                    className="flex items-center gap-2 text-gold/80 group-hover:text-gold transition-colors"
-                    style={{ paddingLeft: '3.25rem' }}
+                    className="flex items-center gap-2 text-gold/85 group-hover:text-gold transition-colors"
+                    style={{ paddingLeft: '2.375rem' }}
                   >
-                    <span className="font-body font-medium text-[0.7rem] tracking-[0.25em] uppercase">
+                    <span className="font-body font-medium text-[0.65rem] tracking-[0.22em] uppercase">
                       Accéder à mon espace
                     </span>
                     <ArrowRight
-                      className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
+                      className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1"
                       aria-hidden
                     />
                   </div>
@@ -292,17 +294,17 @@ export default function WelcomePage() {
 
         {/* Stats — italic prose sentence */}
         <motion.section
-          className="text-center py-8 border-t border-b border-white/[0.08] mb-7"
+          className="text-center py-6 border-t border-b border-white/[0.08] mb-5"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.9 }}
         >
-          <div className="text-[0.62rem] font-body font-semibold tracking-[0.28em] uppercase text-gold mb-3">
+          <div className="text-[0.6rem] font-body font-semibold tracking-[0.28em] uppercase text-gold mb-2">
             L'école en chiffres
           </div>
           <p
-            className="font-display italic text-white/95 max-w-[440px] mx-auto leading-[1.5]"
-            style={{ fontSize: '1.1rem' }}
+            className="font-display italic text-white/95 max-w-[440px] mx-auto leading-[1.45]"
+            style={{ fontSize: '0.98rem' }}
           >
             {statsLoading || !stats ? (
               <span className="text-white/50 not-italic">Chargement…</span>
