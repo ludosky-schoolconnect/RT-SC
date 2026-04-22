@@ -2,51 +2,116 @@
    RT-SC · Design Tokens
    Navy / Gold / White — Ivy League Premium
    Playfair Display (display) + DM Sans (body)
+   ============================================================
+   THEME ARCHITECTURE
+   ------------------
+   Colors are defined as space-separated RGB triplets so Tailwind
+   utilities (`bg-navy/40`, `text-ink-500/80`, etc.) can inject
+   alpha values at compile time via the `<alpha-value>` placeholder
+   in tailwind.config.js.
+
+   The light theme lives on `:root` so it's the default and applies
+   when no `data-theme` is set yet (e.g. during the very first
+   render before the settings store hydrates).
+
+   Dark and sepia palettes will be added in a follow-up migration
+   under `[data-theme="dark"]` and `[data-theme="sepia"]` selectors.
+   Until those are added, switching the theme attribute writes the
+   value to <html> but the visible UI stays in the light palette
+   (the variables fall through to the :root values).
    ============================================================ */
 
 :root {
-  /* Palette */
-  --navy: #0B2545;
-  --navy-light: #1a3a6b;
-  --navy-dark: #071830;
-  --gold: #C9A84C;
-  --gold-light: #E8C97A;
-  --gold-pale: #FDF6E3;
-  --white: #FFFFFF;
-  --off-white: #F7F8FA;
+  /* ── BRAND ────────────────────────────────────────────────── */
+  --color-navy:        11 37 69;     /* #0B2545 */
+  --color-navy-light:  26 58 107;    /* #1A3A6B */
+  --color-navy-dark:   7 24 48;      /* #071830 */
 
-  --ink-50: #F0F2F5;
-  --ink-100: #E4E8EE;
-  --ink-200: #CBD2DC;
-  --ink-400: #8A96A8;
-  --ink-600: #4A5568;
-  --ink-800: #1E2A3A;
+  --color-gold:        201 168 76;   /* #C9A84C */
+  --color-gold-light:  232 201 122;  /* #E8C97A */
+  --color-gold-pale:   253 246 227;  /* #FDF6E3 */
+  --color-gold-dark:   168 134 43;   /* #A8862B */
 
-  /* Semantic */
-  --success: #1A7F4B;
-  --success-bg: #EAF6F0;
-  --warning: #B45309;
-  --warning-bg: #FEF3C7;
-  --danger: #B91C1C;
-  --danger-bg: #FEE2E2;
-  --info: #0B2545;
-  --info-bg: #EFF4FB;
+  /* ── NEUTRAL TEXT / SURFACES ──────────────────────────────── */
+  --color-white:       255 255 255;
+  --color-off-white:   247 248 250;  /* #F7F8FA */
 
-  /* Séries (second cycle badges) */
-  --serie-a: #7C3AED;
-  --serie-a-bg: #EDE9FE;
-  --serie-b: #0284C7;
-  --serie-b-bg: #E0F2FE;
-  --serie-c: #059669;
-  --serie-c-bg: #D1FAE5;
-  --serie-d: #D97706;
-  --serie-d-bg: #FEF3C7;
+  --color-ink-50:      240 242 245;  /* #F0F2F5 */
+  --color-ink-100:     228 232 238;  /* #E4E8EE */
+  --color-ink-200:     203 210 220;  /* #CBD2DC */
+  --color-ink-300:     174 184 199;  /* #AEB8C7 */
+  --color-ink-400:     138 150 168;  /* #8A96A8 */
+  --color-ink-500:     103 116 136;  /* #677488 */
+  --color-ink-600:     74 85 104;    /* #4A5568 */
+  --color-ink-700:     47 57 71;     /* #2F3947 */
+  --color-ink-800:     30 42 58;     /* #1E2A3A */
 
-  /* Fonts */
+  /* ── SEMANTIC ─────────────────────────────────────────────── */
+  --color-success:      26 127 75;    /* #1A7F4B */
+  --color-success-bg:   234 246 240;  /* #EAF6F0 */
+  --color-success-dark: 15 92 54;     /* #0F5C36 */
+
+  --color-warning:      180 83 9;     /* #B45309 */
+  --color-warning-bg:   254 243 199;  /* #FEF3C7 */
+  --color-warning-dark: 124 58 6;     /* #7C3A06 */
+
+  --color-danger:       185 28 28;    /* #B91C1C */
+  --color-danger-bg:    254 226 226;  /* #FEE2E2 */
+  --color-danger-dark:  139 20 20;    /* #8B1414 */
+
+  --color-info:         11 37 69;     /* #0B2545 */
+  --color-info-bg:      239 244 251;  /* #EFF4FB */
+
+  /* ── SÉRIES (second cycle badges) ─────────────────────────── */
+  --color-serie-a:      124 58 237;   /* #7C3AED */
+  --color-serie-a-bg:   237 233 254;  /* #EDE9FE */
+  --color-serie-b:      2 132 199;    /* #0284C7 */
+  --color-serie-b-bg:   224 242 254;  /* #E0F2FE */
+  --color-serie-c:      5 150 105;    /* #059669 */
+  --color-serie-c-bg:   209 250 229;  /* #D1FAE5 */
+  --color-serie-d:      217 119 6;    /* #D97706 */
+  --color-serie-d-bg:   254 243 199;  /* #FEF3C7 */
+
+  /* ── LEGACY HEX ALIASES ──────────────────────────────────────
+     A handful of older components reference --navy, --gold, etc.
+     directly (not via Tailwind classes) — keep them working until
+     the audit pass migrates everything. */
+  --navy:        #0B2545;
+  --navy-light:  #1A3A6B;
+  --navy-dark:   #071830;
+  --gold:        #C9A84C;
+  --gold-light:  #E8C97A;
+  --gold-pale:   #FDF6E3;
+  --white:       #FFFFFF;
+  --off-white:   #F7F8FA;
+  --ink-50:      #F0F2F5;
+  --ink-100:     #E4E8EE;
+  --ink-200:     #CBD2DC;
+  --ink-400:     #8A96A8;
+  --ink-600:     #4A5568;
+  --ink-800:     #1E2A3A;
+  --success:     #1A7F4B;
+  --success-bg:  #EAF6F0;
+  --warning:     #B45309;
+  --warning-bg:  #FEF3C7;
+  --danger:      #B91C1C;
+  --danger-bg:   #FEE2E2;
+  --info:        #0B2545;
+  --info-bg:     #EFF4FB;
+  --serie-a:     #7C3AED;
+  --serie-a-bg:  #EDE9FE;
+  --serie-b:     #0284C7;
+  --serie-b-bg:  #E0F2FE;
+  --serie-c:     #059669;
+  --serie-c-bg:  #D1FAE5;
+  --serie-d:     #D97706;
+  --serie-d-bg:  #FEF3C7;
+
+  /* ── FONTS ────────────────────────────────────────────────── */
   --font-display: 'Playfair Display', Georgia, serif;
   --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
 
-  /* Spacing scale */
+  /* ── SPACING ──────────────────────────────────────────────── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -57,28 +122,40 @@
   --space-10: 40px;
   --space-12: 48px;
 
-  /* Radius */
+  /* ── RADIUS ───────────────────────────────────────────────── */
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 18px;
   --radius-xl: 24px;
   --radius-full: 9999px;
 
-  /* Shadows */
+  /* ── SHADOWS ──────────────────────────────────────────────── */
   --shadow-xs: 0 1px 3px rgba(11, 37, 69, 0.06);
   --shadow-sm: 0 2px 8px rgba(11, 37, 69, 0.08);
   --shadow-md: 0 4px 20px rgba(11, 37, 69, 0.12);
   --shadow-lg: 0 8px 40px rgba(11, 37, 69, 0.18);
   --shadow-xl: 0 16px 60px rgba(11, 37, 69, 0.24);
 
-  /* Transitions */
+  /* ── TRANSITIONS ──────────────────────────────────────────── */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-spring: 400ms cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Layout */
+  /* ── LAYOUT ───────────────────────────────────────────────── */
   --dash-nav-height: 64px;
   --dash-header-height: 68px;
   --max-content-width: 760px;
 }
+
+/* ============================================================
+   FUTURE THEME OVERRIDES
+   ============================================================
+   When the dark + sepia palettes ship, they go here as:
+
+   [data-theme="dark"]  { --color-navy: ...; --color-white: ...; etc }
+   [data-theme="sepia"] { --color-navy: ...; --color-white: ...; etc }
+
+   No JS or Tailwind config change needed — the variables flow
+   through automatically.
+   ============================================================ */

@@ -129,15 +129,15 @@ button,
 
 /* ── À propos markdown body ──────────────────────────────── */
 .prose-rt-sc {
-  color: theme('colors.ink.800');
+  color: rgb(var(--color-ink-800));
   font-size: 1rem;
   line-height: 1.7;
 }
 .prose-rt-sc h1,
 .prose-rt-sc h2,
 .prose-rt-sc h3 {
-  font-family: theme('fontFamily.display');
-  color: theme('colors.navy.DEFAULT');
+  font-family: var(--font-display);
+  color: rgb(var(--color-navy));
   font-weight: 700;
   letter-spacing: -0.01em;
   margin-top: 1.6em;
@@ -148,16 +148,16 @@ button,
 .prose-rt-sc h3 { font-size: 1.1rem; }
 .prose-rt-sc p { margin: 0.85em 0; }
 .prose-rt-sc a {
-  color: theme('colors.navy.DEFAULT');
+  color: rgb(var(--color-navy));
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: theme('colors.gold.DEFAULT');
+  text-decoration-color: rgb(var(--color-gold));
   text-decoration-thickness: 1.5px;
   transition: color 0.15s ease;
 }
 .prose-rt-sc a:hover {
-  color: theme('colors.gold.DEFAULT');
+  color: rgb(var(--color-gold));
 }
 .prose-rt-sc ul,
 .prose-rt-sc ol {
@@ -167,24 +167,24 @@ button,
 .prose-rt-sc li { margin: 0.3em 0; }
 .prose-rt-sc ul li { list-style: disc; }
 .prose-rt-sc ol li { list-style: decimal; }
-.prose-rt-sc strong { color: theme('colors.navy.DEFAULT'); font-weight: 700; }
+.prose-rt-sc strong { color: rgb(var(--color-navy)); font-weight: 700; }
 .prose-rt-sc em { font-style: italic; }
 .prose-rt-sc blockquote {
-  border-left: 3px solid theme('colors.gold.DEFAULT');
+  border-left: 3px solid rgb(var(--color-gold));
   padding-left: 1em;
   margin: 1.2em 0;
-  color: theme('colors.ink.600');
+  color: rgb(var(--color-ink-600));
   font-style: italic;
 }
 .prose-rt-sc code {
-  background: theme('colors.ink.50');
+  background: rgb(var(--color-ink-50));
   padding: 0.15em 0.4em;
   border-radius: 4px;
   font-size: 0.9em;
   font-family: ui-monospace, 'SF Mono', monospace;
 }
 .prose-rt-sc pre {
-  background: theme('colors.navy.DEFAULT');
+  background: rgb(var(--color-navy));
   color: white;
   padding: 1em;
   border-radius: 8px;
@@ -198,7 +198,7 @@ button,
 }
 .prose-rt-sc hr {
   border: none;
-  border-top: 1px solid theme('colors.ink.100');
+  border-top: 1px solid rgb(var(--color-ink-100));
   margin: 2em 0;
 }
 .prose-rt-sc img {

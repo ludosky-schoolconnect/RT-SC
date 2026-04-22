@@ -1,54 +1,66 @@
 /** @type {import('tailwindcss').Config} */
+
+/**
+ * Helper: build a color value that consumes a CSS variable as RGB
+ * triplet and supports Tailwind's <alpha-value> placeholder so
+ * utilities like `bg-navy/40` keep working.
+ *
+ *   token('navy') → 'rgb(var(--color-navy) / <alpha-value>)'
+ */
+const token = (name) => `rgb(var(--color-${name}) / <alpha-value>)`
+
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
         navy: {
-          DEFAULT: '#0B2545',
-          light: '#1a3a6b',
-          dark: '#071830',
+          DEFAULT: token('navy'),
+          light:   token('navy-light'),
+          dark:    token('navy-dark'),
         },
         gold: {
-          DEFAULT: '#C9A84C',
-          light: '#E8C97A',
-          pale: '#FDF6E3',
-          dark: '#A8862B',  // deeper amber for text on light backgrounds
+          DEFAULT: token('gold'),
+          light:   token('gold-light'),
+          pale:    token('gold-pale'),
+          dark:    token('gold-dark'),
         },
+        white:     token('white'),
+        'off-white': token('off-white'),
         ink: {
-          50: '#F0F2F5',
-          100: '#E4E8EE',
-          200: '#CBD2DC',
-          300: '#AEB8C7',
-          400: '#8A96A8',
-          500: '#677488',
-          600: '#4A5568',
-          700: '#2F3947',
-          800: '#1E2A3A',
+          50:  token('ink-50'),
+          100: token('ink-100'),
+          200: token('ink-200'),
+          300: token('ink-300'),
+          400: token('ink-400'),
+          500: token('ink-500'),
+          600: token('ink-600'),
+          700: token('ink-700'),
+          800: token('ink-800'),
         },
         success: {
-          DEFAULT: '#1A7F4B',
-          bg: '#EAF6F0',
-          dark: '#0F5C36',
+          DEFAULT: token('success'),
+          bg:      token('success-bg'),
+          dark:    token('success-dark'),
         },
         warning: {
-          DEFAULT: '#B45309',
-          bg: '#FEF3C7',
-          dark: '#7C3A06',
+          DEFAULT: token('warning'),
+          bg:      token('warning-bg'),
+          dark:    token('warning-dark'),
         },
         danger: {
-          DEFAULT: '#B91C1C',
-          bg: '#FEE2E2',
-          dark: '#8B1414',
+          DEFAULT: token('danger'),
+          bg:      token('danger-bg'),
+          dark:    token('danger-dark'),
         },
         info: {
-          DEFAULT: '#0B2545',
-          bg: '#EFF4FB',
+          DEFAULT: token('info'),
+          bg:      token('info-bg'),
         },
-        'serie-a': { DEFAULT: '#7C3AED', bg: '#EDE9FE' },
-        'serie-b': { DEFAULT: '#0284C7', bg: '#E0F2FE' },
-        'serie-c': { DEFAULT: '#059669', bg: '#D1FAE5' },
-        'serie-d': { DEFAULT: '#D97706', bg: '#FEF3C7' },
+        'serie-a': { DEFAULT: token('serie-a'), bg: token('serie-a-bg') },
+        'serie-b': { DEFAULT: token('serie-b'), bg: token('serie-b-bg') },
+        'serie-c': { DEFAULT: token('serie-c'), bg: token('serie-c-bg') },
+        'serie-d': { DEFAULT: token('serie-d'), bg: token('serie-d-bg') },
       },
       fontFamily: {
         display: ['"Playfair Display"', 'Georgia', 'serif'],
