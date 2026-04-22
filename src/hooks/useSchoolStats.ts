@@ -5,8 +5,15 @@
  * collection regardless of how many documents are inside. Far cheaper than
  * fetching all docs and counting in JS.
  *
- * Cached for 2 minutes via TanStack Query so the welcome page doesn't
- * re-hit Firestore on every visit.
+ * Only counts collections that are publicly readable (rules `allow read: if
+ * true`) so this hook works on the unauthenticated welcome page:
+ *   - /classes (public)
+ *   - /{path}/eleves (public via collection group)
+ *
+ * Each count is wrapped in safeCount() so a failure on one doesn't kill
+ * the other. Missing values surface as 0.
+ *
+ * Cached for 2 minutes via TanStack Query.
  */
 
 import { useQuery } from '@tanstack/react-query'
@@ -16,21 +23,27 @@ import { db } from '@/firebase'
 interface SchoolStats {
   classes: number
   eleves: number
-  professeurs: number
+}
+
+async function safeCount(
+  query: ReturnType<typeof collection> | ReturnType<typeof collectionGroup>
+): Promise<number> {
+  try {
+    const snap = await getCountFromServer(query)
+    return snap.data().count
+  } catch (err) {
+    console.warn('[useSchoolStats] count failed, returning 0:', err)
+    return 0
+  }
 }
 
 async function fetchSchoolStats(): Promise<SchoolStats> {
-  const [classesSnap, elevesSnap, profsSnap] = await Promise.all([
-    getCountFromServer(collection(db, 'classes')),
-    getCountFromServer(collectionGroup(db, 'eleves')),
-    getCountFromServer(collection(db, 'professeurs')),
+  const [classes, eleves] = await Promise.all([
+    safeCount(collection(db, 'classes')),
+    safeCount(collectionGroup(db, 'eleves')),
   ])
 
-  return {
-    classes: classesSnap.data().count,
-    eleves: elevesSnap.data().count,
-    professeurs: profsSnap.data().count,
-  }
+  return { classes, eleves }
 }
 
 export function useSchoolStats() {
@@ -38,5 +51,6 @@ export function useSchoolStats() {
     queryKey: ['school-stats'],
     queryFn: fetchSchoolStats,
     staleTime: 2 * 60_000,
+    retry: false,
   })
 }

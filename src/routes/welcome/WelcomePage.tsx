@@ -1,291 +1,364 @@
 /**
- * RT-SC · Welcome page (role selection) — REDESIGNED.
+ * RT-SC · Welcome page (role selection) — EDITORIAL REDESIGN.
  *
- * Above the role cards:
- *   - Time-aware greeting (Bonjour / Bon après-midi / Bonsoir)
- *   - Today's date (Bénin local)
- *   - School identity card (nom + ville + devise) from /ecole/config
- *   - Live stats strip: classes, élèves, professeurs (animated count-up)
+ * Design intent: feels like visiting a prestigious school's official
+ * website, not a SaaS login. Full-bleed photo hero with school
+ * identity, then editorial numbered role list, stats as italic prose.
  *
- * Counts use Firestore's getCountFromServer (1 read per collection,
- * regardless of how many docs).
+ * Data sources (unchanged):
+ *   - useEcoleConfig() — nom, ville, devise, anneeActive from /ecole/config
+ *   - useSchoolStats() — classes / élèves counts (professeurs omitted
+ *     because /professeurs rules require auth, and the welcome page
+ *     is pre-auth)
+ *   - useGreeting()    — time-aware "Bonjour" / "Bon après-midi" / "Bonsoir"
+ *
+ * Routes preserved: /auth/personnel, /auth/eleve, /auth/admin,
+ * /auth/parent, /inscription. No downstream changes.
+ *
+ * Assets:
+ *   - /welcome-hero.webp (48 KB, primary)
+ *   - /welcome-hero.jpg  (114 KB, fallback for browsers without webp)
  */
 
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import CountUp from 'react-countup'
-import {
-  ShieldCheck,
-  GraduationCap,
-  BookOpen,
-  Users,
-  ChevronRight,
-  ClipboardSignature,
-  Building2,
-  School as SchoolIcon,
-} from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import { useSchoolStats } from '@/hooks/useSchoolStats'
 import { useGreeting } from '@/hooks/useGreeting'
-import { SchoolConnectLogo } from '@/components/ui/SchoolConnectLogo'
 
-interface RoleCardProps {
-  to: string
-  icon: React.ReactNode
-  title: string
-  description: string
-  variant?: 'default' | 'admin'
-}
-
-function RoleCard({ to, icon, title, description, variant = 'default' }: RoleCardProps) {
-  return (
-    <motion.div
-      whileHover={{ y: -2 }}
-      whileTap={{ scale: 0.985 }}
-      transition={{ type: 'spring', stiffness: 320, damping: 24 }}
-    >
-      <Link
-        to={to}
-        className={cn(
-          'group flex items-center gap-4 p-5 rounded-lg border backdrop-blur-md',
-          'transition-colors duration-200 ease-out-soft',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40',
-          variant === 'admin'
-            ? 'bg-navy-dark/40 border-white/10 hover:border-white/20'
-            : 'bg-white/[0.06] border-white/10 hover:border-gold/40 hover:bg-white/[0.10]'
-        )}
-      >
-        <div
-          className={cn(
-            'flex shrink-0 items-center justify-center rounded-md border',
-            variant === 'admin'
-              ? 'bg-navy/50 border-white/10 text-white/70'
-              : 'bg-gold/15 border-gold/25 text-gold-light'
-          )}
-          style={{ width: 52, height: 52 }}
-        >
-          <span className="h-[22px] w-[22px]">{icon}</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="font-display text-base text-white font-semibold">
-            {title}
-          </h3>
-          <p className="text-[0.78rem] text-white/55 leading-snug mt-0.5">
-            {description}
-          </p>
-        </div>
-        <ChevronRight
-          className="h-5 w-5 shrink-0 text-white/30 group-hover:text-white/60 transition-colors"
-          aria-hidden
-        />
-      </Link>
-    </motion.div>
-  )
-}
-
-interface StatPillProps {
-  icon: React.ReactNode
-  label: string
-  value: number | undefined
-  loading: boolean
-}
-
-function StatPill({ icon, label, value, loading }: StatPillProps) {
-  return (
-    <div className="flex flex-col items-center justify-center text-center px-2 py-3 rounded-md bg-white/[0.04] border border-white/10 min-w-0 flex-1">
-      <span className="text-gold-light mb-1.5" aria-hidden>
-        {icon}
-      </span>
-      <span className="font-display text-2xl font-bold text-white tabular-nums leading-none">
-        {loading || value === undefined ? (
-          <span className="inline-block w-8 h-6 bg-white/10 rounded animate-pulse" />
-        ) : (
-          <CountUp end={value} duration={1.4} />
-        )}
-      </span>
-      <span className="mt-1 text-[0.65rem] uppercase tracking-[0.12em] text-white/55 font-semibold">
-        {label}
-      </span>
-    </div>
-  )
-}
+const ROLE_ITEMS = [
+  {
+    to: '/auth/personnel',
+    number: '01',
+    title: "Personnel de l'école",
+    description: 'Professeurs et caissiers — accéder à mon espace de travail.',
+    primary: true,
+  },
+  {
+    to: '/auth/eleve',
+    number: '02',
+    title: 'Élève',
+    description: 'Mes notes, mes absences et mon emploi du temps.',
+    primary: false,
+  },
+  {
+    to: '/auth/admin',
+    number: '03',
+    title: 'Administration',
+    description: "Pilotage de l'établissement et gestion globale.",
+    primary: false,
+  },
+] as const
 
 export default function WelcomePage() {
   const { data: config } = useEcoleConfig()
   const { data: stats, isLoading: statsLoading } = useSchoolStats()
   const { greeting, today } = useGreeting()
 
+  // Dynamic crest letter from school name (admin-editable via
+  // ecole/config.nom). Falls back to a dot if not loaded.
+  const crestLetter = useMemo(() => {
+    const nom = config?.nom?.trim()
+    if (!nom) return '·'
+    return nom.charAt(0).toUpperCase()
+  }, [config?.nom])
+
+  const schoolName = config?.nom || 'Établissement scolaire'
+  const ville = config?.ville || ''
+  const devise = config?.devise?.trim() || ''
+
+  // Format "LUNDI 22 AVRIL" — strip the year from `today` for a tighter
+  // hero. Full year goes in the footer.
+  const heroDate = useMemo(() => {
+    return today.replace(/ \d{4}$/, '').toUpperCase()
+  }, [today])
+
   return (
-    <div
-      className="min-h-dvh flex flex-col bg-navy"
-      style={{
-        backgroundImage:
-          'radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,168,76,0.18) 0%, transparent 60%), radial-gradient(ellipse 60% 60% at 100% 100%, rgba(26,58,107,0.5) 0%, transparent 70%)',
-      }}
-    >
-      <div className="flex-1 flex flex-col w-full max-w-2xl mx-auto px-5 pt-8 pb-6">
-        {/* Brand header */}
-        <motion.header
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="text-center mb-6"
-        >
-          <div className="inline-flex items-center gap-3 mb-2">
-            <SchoolConnectLogo size={44} animate={false} />
-            <span className="font-display text-xl text-white font-semibold tracking-tight">
+    <div className="min-h-dvh bg-navy-dark text-white">
+      {/* ═══════════════════════════════════════════════════════
+          HERO — full-bleed school identity
+          ═══════════════════════════════════════════════════════ */}
+      <header className="relative h-[58vh] min-h-[420px] flex flex-col overflow-hidden">
+        {/* Photo with WebP/JPEG fallback */}
+        <picture aria-hidden>
+          <source srcSet="/welcome-hero.webp" type="image/webp" />
+          <img
+            src="/welcome-hero.jpg"
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover z-0"
+            style={{ filter: 'saturate(0.85) contrast(1.05)' }}
+            loading="eager"
+            fetchPriority="high"
+          />
+        </picture>
+
+        {/* Overlay gradient */}
+        <div
+          aria-hidden
+          className="absolute inset-0 z-[1]"
+          style={{
+            background:
+              'linear-gradient(180deg, rgba(7,24,48,0.55) 0%, rgba(7,24,48,0.4) 35%, rgba(7,24,48,0.85) 80%, #071830 100%)',
+          }}
+        />
+
+        {/* Top bar: brand + date */}
+        <div className="relative z-[2] flex items-center justify-between px-5 pt-6">
+          <div className="flex items-center gap-2">
+            <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-gold" />
+            <span className="text-[0.68rem] font-body font-medium tracking-[0.2em] uppercase text-white/70">
               SchoolConnect
             </span>
           </div>
-        </motion.header>
+          <span className="text-[0.62rem] font-body font-medium tracking-[0.25em] uppercase text-white/70">
+            {heroDate}
+          </span>
+        </div>
 
-        {/* Greeting + date */}
+        {/* Hero content: crest, name, location, devise */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.15, duration: 0.4 }}
-          className="text-center mb-5"
-        >
-          <p className="text-[0.7rem] uppercase tracking-[0.18em] text-gold-light/80 font-semibold mb-1">
-            {today}
-          </p>
-          <h1 className="font-display text-2xl text-white font-bold tracking-tight">
-            {greeting}.
-          </h1>
-        </motion.div>
-
-        {/* School identity card */}
-        {config && (config.nom || config.ville || config.devise) && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.4 }}
-            className="rounded-lg border border-white/10 bg-white/[0.05] backdrop-blur-md p-4 mb-4 text-center"
-          >
-            {config.nom && (
-              <p className="font-display text-lg text-white font-bold tracking-tight">
-                {config.nom}
-              </p>
-            )}
-            {config.ville && (
-              <p className="inline-flex items-center gap-1.5 mt-0.5 text-[0.78rem] text-white/65">
-                <Building2 className="h-3.5 w-3.5 text-gold-light" aria-hidden />
-                {config.ville}
-              </p>
-            )}
-            {config.devise && (
-              <p className="mt-2 text-[0.78rem] text-white/55 italic font-display">
-                « {config.devise} »
-              </p>
-            )}
-          </motion.div>
-        )}
-
-        {/* Live stats strip */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
+          className="relative z-[2] flex-1 flex flex-col items-center justify-center px-6 text-center"
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.4 }}
-          className="grid grid-cols-3 gap-2 mb-6"
+          transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
         >
-          <StatPill
-            icon={<SchoolIcon className="h-4 w-4" />}
-            label="Classes"
-            value={stats?.classes}
-            loading={statsLoading}
-          />
-          <StatPill
-            icon={<GraduationCap className="h-4 w-4" />}
-            label="Élèves"
-            value={stats?.eleves}
-            loading={statsLoading}
-          />
-          <StatPill
-            icon={<BookOpen className="h-4 w-4" />}
-            label="Professeurs"
-            value={stats?.professeurs}
-            loading={statsLoading}
-          />
-        </motion.div>
+          {/* Crest — dynamic letter from school name */}
+          <div
+            className="w-12 h-12 mb-4 rounded-full flex items-center justify-center font-display font-bold text-[1.375rem] text-gold"
+            style={{
+              border: '1.5px solid rgba(201,168,76,0.4)',
+              background: 'rgba(201,168,76,0.1)',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)',
+            }}
+            aria-hidden
+          >
+            {crestLetter}
+          </div>
 
-        {/* Role selection */}
+          {/* School name */}
+          <h1
+            className="font-display font-medium text-white mb-3 leading-[0.95]"
+            style={{
+              fontSize: 'clamp(2.75rem, 11vw, 4rem)',
+              letterSpacing: '0.02em',
+              textShadow: '0 2px 30px rgba(5,15,31,0.6)',
+            }}
+          >
+            {schoolName}
+          </h1>
+
+          {/* Location with gold hairlines */}
+          {ville && (
+            <div className="flex items-center justify-center gap-3.5 mb-5">
+              <span aria-hidden className="w-6 h-px bg-gold opacity-70" />
+              <span className="text-[0.65rem] font-body font-medium tracking-[0.3em] uppercase text-white">
+                {ville} — Bénin
+              </span>
+              <span aria-hidden className="w-6 h-px bg-gold opacity-70" />
+            </div>
+          )}
+
+          {/* Devise — italic serif with gold typographic quotes */}
+          {devise && (
+            <p
+              className="font-display italic text-white/95 max-w-[380px] mx-auto leading-relaxed"
+              style={{ fontSize: '1.05rem' }}
+            >
+              <span className="text-gold/70 text-[1.6em] leading-none align-[-0.2em] mr-0.5">
+                &ldquo;
+              </span>
+              {devise}
+              <span className="text-gold/70 text-[1.6em] leading-none align-[-0.2em] ml-0.5">
+                &rdquo;
+              </span>
+            </p>
+          )}
+        </motion.div>
+      </header>
+
+      {/* ═══════════════════════════════════════════════════════
+          MAIN — greeting, roles, stats, footer
+          ═══════════════════════════════════════════════════════ */}
+      <main className="max-w-[640px] mx-auto px-6 py-10">
+        {/* Greeting block */}
+        <motion.section
+          className="text-center mb-10"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <div className="text-[0.62rem] font-body font-semibold tracking-[0.35em] uppercase text-gold mb-2.5">
+            Bienvenue
+          </div>
+          <h2
+            className="font-display font-medium text-white mb-1.5 leading-none"
+            style={{
+              fontSize: 'clamp(2rem, 8vw, 2.75rem)',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {greeting}.
+          </h2>
+          <p className="font-display italic text-white/70 text-base">
+            Qui êtes-vous aujourd'hui&nbsp;?
+          </p>
+        </motion.section>
+
+        {/* Role cards — editorial numbered list */}
         <motion.div
+          className="mb-10"
           initial="hidden"
           animate="show"
           variants={{
             hidden: {},
-            show: { transition: { staggerChildren: 0.07, delayChildren: 0.4 } },
+            show: { transition: { staggerChildren: 0.08, delayChildren: 0.55 } },
           }}
-          className="flex flex-col gap-3"
         >
-          {[
-            <RoleCard
-              key="personnel"
-              to="/auth/personnel"
-              icon={<BookOpen className="h-full w-full" />}
-              title="Personnel de l'école"
-              description="Professeurs et caissiers : accéder à mon espace."
-            />,
-            <RoleCard
-              key="eleve"
-              to="/auth/eleve"
-              icon={<GraduationCap className="h-full w-full" />}
-              title="Élève"
-              description="Consulter mes notes, mes absences et mon emploi du temps."
-            />,
-            <RoleCard
-              key="admin"
-              to="/auth/admin"
-              icon={<ShieldCheck className="h-full w-full" />}
-              title="Administration"
-              description="Pilotage de l'établissement et gestion globale."
-              variant="admin"
-            />,
-          ].map((card, i) => (
+          {ROLE_ITEMS.map((role) => (
             <motion.div
-              key={i}
+              key={role.to}
               variants={{
-                hidden: { opacity: 0, y: 12 },
-                show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } },
+                hidden: { opacity: 0, y: 14 },
+                show: {
+                  opacity: 1,
+                  y: 0,
+                  transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
+                },
               }}
             >
-              {card}
+              <Link
+                to={role.to}
+                className={cn(
+                  'group relative flex items-center gap-4 pr-3 py-5',
+                  'border-b border-white/[0.08]',
+                  'hover:pl-2 transition-[padding] duration-300 ease-out',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 focus-visible:rounded',
+                  role.primary && 'py-6'
+                )}
+              >
+                {/* Number */}
+                <span className="font-display font-medium text-[0.8rem] tracking-wider text-gold self-start mt-1.5 min-w-[1.75rem]">
+                  {role.number}
+                </span>
+
+                {/* Body */}
+                <div className="flex-1 min-w-0">
+                  <div
+                    className={cn(
+                      'font-display text-white leading-tight mb-1',
+                      role.primary
+                        ? 'text-[1.875rem] font-semibold'
+                        : 'text-[1.5rem] font-medium'
+                    )}
+                  >
+                    {role.title}
+                  </div>
+                  <div className="text-[0.78rem] text-white/65 leading-snug max-w-[300px]">
+                    {role.description}
+                  </div>
+                </div>
+
+                {/* Arrow */}
+                <ArrowRight
+                  className="h-5 w-5 text-white/25 group-hover:text-gold group-hover:translate-x-1.5 transition-all duration-300 shrink-0"
+                  aria-hidden
+                />
+              </Link>
             </motion.div>
           ))}
         </motion.div>
 
-        {/* Secondary actions */}
-        <motion.div
+        {/* Stats — italic prose sentence */}
+        <motion.section
+          className="text-center py-8 border-t border-b border-white/[0.08] mb-7"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.7, duration: 0.4 }}
-          className="mt-6 grid grid-cols-2 gap-3"
+          transition={{ duration: 0.6, delay: 0.9 }}
         >
+          <div className="text-[0.62rem] font-body font-semibold tracking-[0.28em] uppercase text-gold mb-3">
+            L'école en chiffres
+          </div>
+          <p
+            className="font-display italic text-white/95 max-w-[440px] mx-auto leading-[1.5]"
+            style={{ fontSize: '1.1rem' }}
+          >
+            {statsLoading || !stats ? (
+              <span className="text-white/50 not-italic">Chargement…</span>
+            ) : (
+              <>
+                Aujourd'hui,{' '}
+                <StatStrong>
+                  <CountUp end={stats.eleves} duration={1.4} /> élèves
+                </StatStrong>{' '}
+                répartis dans{' '}
+                <StatStrong>
+                  <CountUp end={stats.classes} duration={1.4} /> classes
+                </StatStrong>
+                .
+              </>
+            )}
+          </p>
+        </motion.section>
+
+        {/* Tertiary links */}
+        <div className="grid grid-cols-2 border-t border-white/[0.08] mb-4">
           <Link
             to="/auth/parent"
-            className="flex items-center gap-2 px-4 py-3 rounded-md border border-white/10 bg-white/[0.04] text-[0.8125rem] text-white/75 hover:text-white hover:border-white/20 transition-colors min-h-touch"
+            className={cn(
+              'text-center py-4 px-4 font-body font-medium',
+              'text-[0.68rem] tracking-[0.2em] uppercase',
+              'text-white/65 hover:text-gold transition-colors',
+              "relative after:content-[''] after:absolute",
+              'after:right-0 after:top-[25%] after:bottom-[25%]',
+              'after:w-px after:bg-white/[0.08]'
+            )}
           >
-            <Users className="h-4 w-4 shrink-0 text-gold-light" aria-hidden />
             Espace parents
           </Link>
           <Link
             to="/inscription"
-            className="flex items-center gap-2 px-4 py-3 rounded-md border border-white/10 bg-white/[0.04] text-[0.8125rem] text-white/75 hover:text-white hover:border-white/20 transition-colors min-h-touch"
+            className={cn(
+              'text-center py-4 px-4 font-body font-medium',
+              'text-[0.68rem] tracking-[0.2em] uppercase',
+              'text-white/65 hover:text-gold transition-colors'
+            )}
           >
-            <ClipboardSignature className="h-4 w-4 shrink-0 text-gold-light" aria-hidden />
             Pré-inscription
           </Link>
-        </motion.div>
+        </div>
 
-        {/* Footer */}
-        <footer className="mt-auto pt-6 text-center text-[0.7rem] text-white/30 tracking-wide">
-          © {new Date().getFullYear()} · SchoolConnect
+        {/* Legal */}
+        <div className="text-center text-[0.58rem] font-body tracking-[0.2em] uppercase text-white/25 py-3">
+          © {new Date().getFullYear()} <Dot /> SchoolConnect
           {config?.anneeActive && (
-            <span className="ml-2 text-white/40">· Année {config.anneeActive}</span>
+            <>
+              {' '}
+              <Dot /> Année {config.anneeActive}
+            </>
           )}
-        </footer>
-      </div>
+        </div>
+      </main>
     </div>
   )
+}
+
+// ───────────────────────────────────────────────────────
+// Small inline helpers
+// ───────────────────────────────────────────────────────
+
+function StatStrong({ children }: { children: React.ReactNode }) {
+  return (
+    <strong className="not-italic font-semibold text-gold font-display">
+      {children}
+    </strong>
+  )
+}
+
+function Dot() {
+  return <span className="text-gold/40 mx-1">·</span>
 }
