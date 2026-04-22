@@ -33,25 +33,30 @@ import { SchoolConnectLogo } from '@/components/ui/SchoolConnectLogo'
 
 const ROLE_ITEMS = [
   {
+    to: '/auth/admin',
+    number: 'I',
+    title: 'Administration',
+    description: "Pilotage de l'établissement et gestion globale au quotidien.",
+  },
+  {
     to: '/auth/personnel',
-    number: '01',
-    title: "Personnel de l'école",
-    description: 'Professeurs et caissiers — accéder à mon espace de travail.',
-    primary: true,
+    number: 'II',
+    title: 'Personnel',
+    description:
+      "Professeurs et caissiers — saisie des notes, présences, paiements.",
   },
   {
     to: '/auth/eleve',
-    number: '02',
-    title: 'Élève',
-    description: 'Mes notes, mes absences et mon emploi du temps.',
-    primary: false,
+    number: 'III',
+    title: 'Élèves',
+    description: 'Consulter mes notes, absences et mon emploi du temps.',
   },
   {
-    to: '/auth/admin',
-    number: '03',
-    title: 'Administration',
-    description: "Pilotage de l'établissement et gestion globale.",
-    primary: false,
+    to: '/auth/parent',
+    number: 'IV',
+    title: 'Parents',
+    description:
+      "Suivre la scolarité de mon enfant — notes, absences, paiements.",
   },
 ] as const
 
@@ -213,58 +218,76 @@ export default function WelcomePage() {
             show: { transition: { staggerChildren: 0.08, delayChildren: 0.55 } },
           }}
         >
-          {ROLE_ITEMS.map((role) => (
-            <motion.div
-              key={role.to}
-              variants={{
-                hidden: { opacity: 0, y: 14 },
-                show: {
-                  opacity: 1,
-                  y: 0,
-                  transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
-                },
-              }}
-            >
-              <Link
-                to={role.to}
-                className={cn(
-                  'group relative flex items-center gap-4 pr-3 py-5',
-                  'border-b border-white/[0.08]',
-                  'hover:pl-2 transition-[padding] duration-300 ease-out',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 focus-visible:rounded',
-                  role.primary && 'py-6'
-                )}
+          {ROLE_ITEMS.map((role, idx) => {
+            const isLast = idx === ROLE_ITEMS.length - 1
+            return (
+              <motion.div
+                key={role.to}
+                variants={{
+                  hidden: { opacity: 0, y: 14 },
+                  show: {
+                    opacity: 1,
+                    y: 0,
+                    transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
+                  },
+                }}
               >
-                {/* Number */}
-                <span className="font-display font-medium text-[0.8rem] tracking-wider text-gold self-start mt-1.5 min-w-[1.75rem]">
-                  {role.number}
-                </span>
+                <Link
+                  to={role.to}
+                  className={cn(
+                    'group block relative py-7',
+                    !isLast && 'border-b border-white/[0.1]',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 focus-visible:rounded'
+                  )}
+                >
+                  {/* Top row: Roman numeral + title, left-aligned baseline */}
+                  <div className="flex items-baseline gap-4 mb-2">
+                    <span
+                      className="font-display italic text-gold font-medium shrink-0"
+                      style={{
+                        fontSize: '1.05rem',
+                        letterSpacing: '0.02em',
+                        minWidth: '2.25rem',
+                      }}
+                    >
+                      {role.number}.
+                    </span>
+                    <span
+                      className="font-display text-white font-semibold leading-none uppercase"
+                      style={{
+                        fontSize: 'clamp(1.375rem, 6vw, 1.75rem)',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {role.title}
+                    </span>
+                  </div>
 
-                {/* Body */}
-                <div className="flex-1 min-w-0">
-                  <div
-                    className={cn(
-                      'font-display text-white leading-tight mb-1',
-                      role.primary
-                        ? 'text-[1.875rem] font-semibold'
-                        : 'text-[1.5rem] font-medium'
-                    )}
+                  {/* Italic description, indented under title */}
+                  <p
+                    className="font-display italic text-white/70 mb-3.5 leading-[1.5]"
+                    style={{ fontSize: '0.95rem', paddingLeft: '3.25rem' }}
                   >
-                    {role.title}
-                  </div>
-                  <div className="text-[0.78rem] text-white/65 leading-snug max-w-[300px]">
                     {role.description}
-                  </div>
-                </div>
+                  </p>
 
-                {/* Arrow */}
-                <ArrowRight
-                  className="h-5 w-5 text-white/25 group-hover:text-gold group-hover:translate-x-1.5 transition-all duration-300 shrink-0"
-                  aria-hidden
-                />
-              </Link>
-            </motion.div>
-          ))}
+                  {/* CTA: "Accéder à mon espace →" — same indent */}
+                  <div
+                    className="flex items-center gap-2 text-gold/80 group-hover:text-gold transition-colors"
+                    style={{ paddingLeft: '3.25rem' }}
+                  >
+                    <span className="font-body font-medium text-[0.7rem] tracking-[0.25em] uppercase">
+                      Accéder à mon espace
+                    </span>
+                    <ArrowRight
+                      className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
+                      aria-hidden
+                    />
+                  </div>
+                </Link>
+              </motion.div>
+            )
+          })}
         </motion.div>
 
         {/* Stats — italic prose sentence */}
@@ -299,32 +322,12 @@ export default function WelcomePage() {
           </p>
         </motion.section>
 
-        {/* Tertiary links */}
-        <div className="grid grid-cols-2 border-t border-white/[0.08] mb-4">
-          <Link
-            to="/auth/parent"
-            className={cn(
-              'text-center py-4 px-4 font-body font-medium',
-              'text-[0.68rem] tracking-[0.2em] uppercase',
-              'text-white/65 hover:text-gold transition-colors',
-              "relative after:content-[''] after:absolute",
-              'after:right-0 after:top-[25%] after:bottom-[25%]',
-              'after:w-px after:bg-white/[0.08]'
-            )}
-          >
-            Espace parents
-          </Link>
-          <Link
-            to="/inscription"
-            className={cn(
-              'text-center py-4 px-4 font-body font-medium',
-              'text-[0.68rem] tracking-[0.2em] uppercase',
-              'text-white/65 hover:text-gold transition-colors'
-            )}
-          >
-            Pré-inscription
-          </Link>
-        </div>
+        {/* Tertiary links intentionally removed:
+            - Parents are now role IV in the main list above.
+            - Pré-inscription is not exposed here — admins have a
+              dedicated QR-code flow for real applicants. A public
+              inscription button would invite spam and unauthorized
+              submissions. */}
 
         {/* Legal */}
         <div className="text-center text-[0.58rem] font-body tracking-[0.2em] uppercase text-white/25 py-3">
