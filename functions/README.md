@@ -24,61 +24,74 @@ https://us-central1-<schoolId>.cloudfunctions.net/fedapayWebhook
 ## Session B — Email pipeline (shipped, dormant)
 
 ### `scheduled/subscriptionReminder`
-Runs every day at **00:00 Africa/Porto-Novo**. For each school, emails
-the admin:
-- 14 days before deadline (friendly heads-up)
-- 7 days before (urgent)
-- 3 days before (last chance)
-- During the 3-day grace period after expiry (escalating)
-
-After that, LockedPage takes over (the school will be locked, so
-email is no longer the right channel).
-
-Idempotency: writes `lastReminderSent` + `lastReminderDate` on
-`/ecole/subscription` to prevent duplicate sends on the same day.
+Runs every day at **00:00 Africa/Porto-Novo**. Emails admin at
+14/7/3 days before deadline and during the 3-day grace period.
 
 ### `triggers/onPreInscriptionStatusChange`
 Fires when `/pre_inscriptions/{id}` is updated. If `statut` changed
 to `Approuvé` or `Refusé` AND the applicant provided an
 `emailParent`, sends them a status email.
 
-Approved emails include the RV date and assigned class.
-Refused emails include the reason if admin provided one.
-
-Parents without email still track via the SC-XXXXXX code.
-
 ### `http/testEmail`
-POST to this endpoint with a JSON body `{"to": "you@example.com",
-"secret": "<TESTEMAIL_SECRET>"}` to verify Resend wiring. See Blaze
-playbook for setup.
+Smoke-test endpoint gated by `TESTEMAIL_SECRET`. Use once after
+deploy to verify email delivery. Delete after verification.
 
-## Dependencies used this round
+## Session C — Scheduled jobs + backups (shipped, dormant)
 
-- `resend` — transactional email (added in Session B)
+### `scheduled/dailyPresenceRollover`
+Runs **00:05 Africa/Porto-Novo**. Moves yesterday's `/presences/*`
+docs to `/archived_absences/{compositeId}`. Replaces the client-side
+lazy-on-read rollover in `src/hooks/useArchiveRollover.ts`.
+
+### `scheduled/monthlyCivismePurge`
+Runs **01:00 on the 1st of every month**. Deletes terminal-state
+quêtes and réclamations older than 180 days (plus cascade of claims).
+Replaces the manual "Purger" button in the Civisme tab.
+
+### `scheduled/nightlyBackup`
+Runs **02:00 daily**. Triggers a full Firestore export to
+`gs://<project>-backups/daily/YYYY-MM-DD/`. Retention (30 days) is
+enforced by a GCS lifecycle rule — not by this function.
+
+### `triggers/yearlySnapshotOnRollover`
+Fires when `/ecole/config.lastArchivedAnnee` changes (admin has run
+year rollover). Exports to `gs://<project>-backups/yearly/<annee>/`.
+This path is NOT covered by the lifecycle rule — kept forever.
+
+### `scheduled/yearlySnapshotFallback`
+Runs **August 31 at 03:00** every year. If admin hasn't run rollover
+by now, triggers an emergency snapshot to
+`gs://<project>-backups/yearly/<annee>-fallback/` and emails the admin
+a nudge.
+
+## Dependencies used
+
+- `firebase-admin` — core
+- `firebase-functions` — Functions v2 (`onSchedule`, `onRequest`, `onDocumentUpdated`, `onDocumentDeleted`)
+- `resend` — transactional email (Session B)
+- `@google-cloud/firestore` — `FirestoreAdminClient` for export operations (Session C)
 
 ## Secrets per school
 
-Already in Session A:
+Session A:
 - `FEDAPAY_WEBHOOK_SECRET` — per-school, from FedaPay dashboard
 
-Added in Session B:
-- `RESEND_API_KEY` — shared across all school projects (one Resend
-  account, one key)
-- `TESTEMAIL_SECRET` — any random string; used as a gate on
-  `testEmail` so random internet traffic can't trigger it
+Session B:
+- `RESEND_API_KEY` — shared across all school projects
+- `TESTEMAIL_SECRET` — random string; gates `testEmail` endpoint
+
+Session C: no new secrets. Uses IAM permissions on the default Cloud
+Functions service account (`<project>@appspot.gserviceaccount.com`):
+- `roles/datastore.importExportAdmin`
+- `roles/storage.admin`
+(granted once per school via the deploy playbook)
 
 Environment (not secrets):
-- `EMAIL_FROM` — e.g. `"SchoolConnect <onboarding@resend.dev>"` in
-  dev, `"SchoolConnect <no-reply@yourdomain.bj>"` in prod
-- `SCHOOL_APP_URL` (optional) — overrides the default
-  `https://<project>.web.app` for links inside emails
+- `EMAIL_FROM` — sender address (Session B)
+- `SCHOOL_APP_URL` (optional) — overrides default `https://<project>.web.app` in email links
+- `BACKUP_BUCKET` (optional) — overrides default `<project>-backups`
 
 ## Local emulator testing
-
-Functions run in the Firebase emulator without Blaze. Resend
-integration won't deliver mail unless you set `RESEND_API_KEY` to a
-real key, but you can test payload shapes by commenting out the
-`sendEmail` call and logging the template output.
 
 ```bash
 cd functions
@@ -87,16 +100,27 @@ npm run build
 firebase emulators:start --only functions,firestore
 ```
 
+Scheduled functions don't trigger automatically in emulator. Test
+them via `firebase functions:shell`:
+
+```bash
+firebase functions:shell --project <projectId>
+> dailyPresenceRollover()
+> monthlyCivismePurge()
+```
+
+Backups can't be tested locally — they require the real Firestore
+export API. Verify via `firebase deploy --only functions` against a
+dev project.
+
 ## Deploy (Blaze only)
 
 See `/DEPLOY-ONCE-BLAZE-IS-READY.md` at the repo root. Never run
-`firebase deploy --only functions` on a Spark-plan project — it fails
+`firebase deploy --only functions` on a Spark-plan project — fails
 with a billing error.
 
-## Pending sessions
+## Pending session
 
-- **Session C — Scheduled jobs**: daily presence rollover, monthly
-  civisme purge, nightly Firestore backup with 30-day rotation +
-  at-rollover annual snapshot
 - **Session D — Frontend cleanup**: remove `useArchiveRollover`,
-  `useSchoolAbsences` batch-delete, manual Purger button
+  `useSchoolAbsences` batch-delete, manual Purger button now that
+  scheduled functions cover them.

@@ -230,10 +230,11 @@ Recent rule additions:
 
 ## 5 · What's NOT done / future work
 
-**Blaze foundation (dormant in `/functions/`)** — Sessions A and B of the Blaze
-rollout shipped: `functions/` directory with scaffolding and 5 functions
-total. The code sits compiled but unshipped; nothing executes until Ludosky
-enables Blaze + runs the deploy playbook at `/DEPLOY-ONCE-BLAZE-IS-READY.md`.
+**Blaze foundation (dormant in `/functions/`)** — Sessions A, B, and C of
+the Blaze rollout shipped: `functions/` directory with scaffolding and 10
+functions total. The code sits compiled but unshipped; nothing executes
+until Ludosky enables Blaze + runs the deploy playbook at
+`/DEPLOY-ONCE-BLAZE-IS-READY.md`.
 
 Shipped functions (dormant):
   - **Session A · Security**
@@ -247,16 +248,33 @@ Shipped functions (dormant):
       or refuses (if they provided `emailParent` on the form)
     - `testEmail` — optional HTTP smoke-test endpoint (delete after
       verifying delivery works)
+  - **Session C · Scheduled jobs + backups**
+    - `dailyPresenceRollover` — runs 00:05 Bénin, server-side replacement
+      for `useArchiveRollover` hook (moves yesterday's presences to
+      `/archived_absences/`)
+    - `monthlyCivismePurge` — runs 01:00 on the 1st, deletes terminal-state
+      quêtes/réclamations older than 180 days (replaces manual Purger button)
+    - `nightlyBackup` — 02:00 daily Firestore export to
+      `gs://<project>-backups/daily/YYYY-MM-DD/`, 30-day rotation via GCS
+      lifecycle rule (not function logic)
+    - `yearlySnapshotOnRollover` — fires on `/ecole/config.lastArchivedAnnee`
+      change, exports to `gs://<project>-backups/yearly/<annee>/`
+      (kept forever, no lifecycle on this path)
+    - `yearlySnapshotFallback` — Aug 31 at 03:00, emergency snapshot if admin
+      forgot to run year rollover + email nudge
 
 Frontend changes shipped alongside Session B:
   - `InscriptionFormPanel.tsx` — added optional "Email du parent" field
   - `types/models.ts` — added `emailParent?` to `PreInscription` interface
 
-Sessions C/D pending:
-  - Session C: scheduled jobs (daily presence rollover, monthly civisme
-    purge, nightly Firestore backup with 30-day rotation + snapshot-on-rollover)
-  - Session D: frontend cleanup (remove `useArchiveRollover` lazy hook,
-    `useSchoolAbsences` batch delete, manual Purger button)
+Session D pending:
+  - Remove `useArchiveRollover` hook invocation from `VieScolaireTab.tsx`
+    (the scheduled function replaces it)
+  - Remove `useSchoolAbsences` 14-day batch-delete (can be a scheduled
+    job too, or removed entirely since the archive rollover handles it)
+  - Decide whether to keep the manual "Purger" button in Civisme tab as
+    admin override, or remove it entirely
+  - Ship the frontend cleanup in one zip
 
 **Also deferred — unrelated to Blaze**:
 

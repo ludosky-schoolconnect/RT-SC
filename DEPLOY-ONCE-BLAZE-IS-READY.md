@@ -139,6 +139,122 @@ create its `.env.<projectid>` file alongside the others.
 
 ---
 
+### 3d. Backup bucket + IAM (Session C — scheduled jobs)
+
+Session C's backup functions need two things per school:
+1. A Cloud Storage bucket to write exports into
+2. IAM permissions on the Cloud Functions service account so it can
+   trigger Firestore exports and write to the bucket
+
+**Step 1 — Create the bucket (per school)**
+
+```bash
+# Naming convention: <projectId>-backups
+gcloud storage buckets create "gs://schoolconnect-nlg-backups" \
+  --project=schoolconnect-nlg \
+  --location=us-central1 \
+  --uniform-bucket-level-access
+
+# Repeat per school
+gcloud storage buckets create "gs://schoolconnect-mag-backups" \
+  --project=schoolconnect-mag \
+  --location=us-central1 \
+  --uniform-bucket-level-access
+```
+
+If `gcloud` isn't available on Termux, use the GCP Console:
+1. https://console.cloud.google.com → select the school project
+2. Cloud Storage → Buckets → Create
+3. Name: `<projectId>-backups`
+4. Location: `us-central1` (multi-region not needed for backups)
+5. Access control: Uniform
+6. Create
+
+**Step 2 — Set the 30-day lifecycle rule on `daily/` prefix**
+
+This is what rotates old backups automatically. The `yearly/` prefix
+is NOT covered by this rule → yearly snapshots kept forever.
+
+Create a file `lifecycle.json` locally:
+
+```json
+{
+  "rule": [
+    {
+      "action": { "type": "Delete" },
+      "condition": {
+        "age": 30,
+        "matchesPrefix": ["daily/"]
+      }
+    }
+  ]
+}
+```
+
+Apply per school:
+
+```bash
+gcloud storage buckets update "gs://schoolconnect-nlg-backups" \
+  --lifecycle-file=lifecycle.json \
+  --project=schoolconnect-nlg
+
+gcloud storage buckets update "gs://schoolconnect-mag-backups" \
+  --lifecycle-file=lifecycle.json \
+  --project=schoolconnect-mag
+# ... per school
+```
+
+Verify:
+```bash
+gcloud storage buckets describe "gs://schoolconnect-nlg-backups" \
+  --format="value(lifecycle)"
+```
+
+**Step 3 — Grant IAM roles to the default service account**
+
+The Cloud Functions runtime uses `<projectId>@appspot.gserviceaccount.com`.
+It needs two roles:
+
+```bash
+# For NLG:
+PROJECT=schoolconnect-nlg
+SA="${PROJECT}@appspot.gserviceaccount.com"
+
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member="serviceAccount:${SA}" \
+  --role="roles/datastore.importExportAdmin"
+
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member="serviceAccount:${SA}" \
+  --role="roles/storage.admin"
+
+# Repeat per school (change PROJECT)
+```
+
+Verify:
+```bash
+gcloud projects get-iam-policy "$PROJECT" \
+  --flatten="bindings[].members" \
+  --filter="bindings.members:serviceAccount:${SA}" \
+  --format="table(bindings.role)"
+# Should list:
+#   roles/datastore.importExportAdmin
+#   roles/storage.admin
+```
+
+**Step 4 — Add BACKUP_BUCKET env var (optional, only if you
+diverge from the `<projectId>-backups` naming convention)**
+
+```bash
+# functions/.env.schoolconnect-nlg   ← append if needed
+BACKUP_BUCKET=schoolconnect-nlg-backups
+```
+
+If you stuck with the default naming, nothing to add — the function
+falls back to `<projectId>-backups` automatically.
+
+---
+
 ## Phase 4 — Deploy functions
 
 **First-time deploy, per school.** Run this ONE SCHOOL AT A TIME and
@@ -156,6 +272,11 @@ firebase deploy --only functions --project schoolconnect-nlg
 #   ✔ functions[subscriptionReminder(us-central1)]: Successful create operation.
 #   ✔ functions[onPreInscriptionStatusChange(us-central1)]: Successful create operation.
 #   ✔ functions[testEmail(us-central1)]: Successful create operation.
+#   ✔ functions[dailyPresenceRollover(us-central1)]: Successful create operation.
+#   ✔ functions[monthlyCivismePurge(us-central1)]: Successful create operation.
+#   ✔ functions[nightlyBackup(us-central1)]: Successful create operation.
+#   ✔ functions[yearlySnapshotOnRollover(us-central1)]: Successful create operation.
+#   ✔ functions[yearlySnapshotFallback(us-central1)]: Successful create operation.
 #   Function URL (fedapayWebhook): https://us-central1-schoolconnect-nlg.cloudfunctions.net/fedapayWebhook
 #   Function URL (testEmail): https://us-central1-schoolconnect-nlg.cloudfunctions.net/testEmail
 ```
@@ -278,6 +399,71 @@ firebase functions:delete testEmail --project schoolconnect-nlg --force
 
 Remove the export from `functions/src/index.ts` to prevent it coming
 back on the next deploy.
+
+---
+
+## Phase 6.6 — Verify scheduled jobs (Session C)
+
+The scheduled functions run automatically at their configured times.
+To verify they work BEFORE the first natural run, trigger each
+manually:
+
+```bash
+firebase functions:shell --project schoolconnect-nlg
+```
+
+In the shell:
+
+```js
+// Daily presence rollover — should move yesterday's presences (if any) to /archived_absences
+dailyPresenceRollover()
+
+// Monthly civisme purge — should delete old terminal-state quêtes/réclamations (if any)
+monthlyCivismePurge()
+
+// Nightly backup — kicks off an export; check GCS bucket within ~2 min
+nightlyBackup()
+
+// Yearly fallback — only meaningful test: temporarily set /ecole/config.lastArchivedAnnee to a stale value, then run. Don't forget to restore.
+yearlySnapshotFallback()
+```
+
+After `nightlyBackup()`, verify the bucket:
+
+```bash
+gcloud storage ls "gs://schoolconnect-nlg-backups/daily/"
+# Expect to see a YYYY-MM-DD folder that wasn't there before
+```
+
+Content inside a backup folder will be a Firestore-native export
+(not human-readable). To restore:
+
+```bash
+# See https://firebase.google.com/docs/firestore/manage-data/export-import
+gcloud firestore import \
+  "gs://schoolconnect-nlg-backups/daily/YYYY-MM-DD/" \
+  --project=schoolconnect-nlg
+```
+
+**Verify lifecycle rule (30-day rotation)**:
+
+```bash
+gcloud storage buckets describe "gs://schoolconnect-nlg-backups" \
+  --format="json(lifecycle)"
+# Should show a rule deleting objects >30d old under daily/
+# NOT touching yearly/
+```
+
+**Verify the yearly trigger** (this one runs on rollover, not on a
+schedule). When an admin runs the year rollover:
+1. After `executeFinalArchive` completes, `/ecole/config.lastArchivedAnnee` is written
+2. The trigger fires within seconds
+3. A new folder `gs://.../yearly/<annee>/` appears in the bucket
+
+You can verify by watching logs during a test rollover:
+```bash
+firebase functions:log --project schoolconnect-nlg --only yearlySnapshotOnRollover
+```
 
 ---
 
