@@ -9,7 +9,13 @@ Don't skip ahead — some steps depend on prior state.
 
 - [ ] You have a valid payment method registered in Google Cloud Billing
 - [ ] You have created an account at https://resend.com (free tier) if doing emails (Session B+)
-- [ ] You have FedaPay webhook secrets for each school (see "Per-school secrets" below)
+- [ ] Each school has its own FedaPay merchant account set up and
+      verified at https://fedapay.com. The `fedaPayPublicKey` for each
+      school is already in its `/ecole/subscription` doc (set via the
+      vendor-app's BootstrapScreen during school creation).
+- [ ] You have dashboard access to each school's FedaPay account
+      (or the school's admin will create the webhook themselves via
+      Phase 5 — see note below)
 
 ---
 
@@ -58,14 +64,25 @@ drifted between the schema and the code.
 **Do this PER SCHOOL PROJECT.** The FedaPay webhook secret is unique per
 school because each school has its own FedaPay merchant account.
 
-### 3a. Get the webhook secret from FedaPay
+### 3a. About the FedaPay webhook secret
 
-1. Log into the school's FedaPay dashboard
-2. Settings → API → Webhook secrets
-3. Click "Generate new secret" (or copy an existing one)
-4. Copy the value — you'll paste it in the next step
+**Order-of-operations note**: FedaPay generates the webhook secret
+when you CREATE a webhook in their dashboard — and a webhook needs
+the Cloud Function URL — which only exists after you first deploy
+the function. So the sequence is:
 
-### 3b. Set the secret in Firebase
+  1. Deploy functions (Phase 4) → note the `fedapayWebhook` URL
+  2. Create the webhook in FedaPay dashboard using that URL (Phase 5)
+     → FedaPay shows you the secret one time
+  3. Come BACK here (Phase 3a) to set the secret on Firebase, then
+     redeploy once so the function loads it
+
+Don't try to complete Phase 3a before Phase 4. The instructions
+below are what you run AFTER Phase 5 gives you the secret.
+
+### 3b. Set the FedaPay webhook secret in Firebase
+
+Once you have a webhook secret from FedaPay (from Phase 5):
 
 ```bash
 # For NLG:
@@ -76,6 +93,13 @@ firebase functions:secrets:set FEDAPAY_WEBHOOK_SECRET --project schoolconnect-nl
 firebase functions:secrets:set FEDAPAY_WEBHOOK_SECRET --project schoolconnect-mag
 firebase functions:secrets:set FEDAPAY_WEBHOOK_SECRET --project schoolconnect-houeto
 # ... etc for every school
+```
+
+After setting the secret, redeploy the function so the runtime loads
+the new value:
+
+```bash
+firebase deploy --only functions:fedapayWebhook --project schoolconnect-nlg
 ```
 
 ### 3c. Resend + email secrets (Session B — email pipeline)
@@ -293,20 +317,154 @@ If deploy fails:
 
 ## Phase 5 — Register webhook URL in FedaPay
 
-**Per school.** For each school:
+**Per school.** Each school's FedaPay merchant account is separate, so
+you register the webhook in each one individually. You'll be logging
+into the FedaPay dashboard using whichever account owns that school's
+merchant profile (this may be the school's admin, the director, or
+you acting on their behalf depending on how you set things up).
 
-1. Log into that school's FedaPay dashboard
-2. Settings → Webhooks → Add webhook
-3. URL: paste the function URL from Phase 4
-   (e.g. `https://us-central1-schoolconnect-nlg.cloudfunctions.net/fedapayWebhook`)
-4. Events: select at least `transaction.approved`
-5. Save
+### 5a. Navigate to the Webhooks section
+
+1. Go to https://live.fedapay.com/webhooks in your browser
+   (or log in at https://fedapay.com and click the Webhooks menu)
+2. Log in with the credentials for THIS school's FedaPay account
+3. **Verify you're in the right account**: the merchant name shown
+   at the top of the dashboard should match the school (e.g. "CEG
+   HOUETO"). If you have multiple merchant accounts, switch via the
+   account picker before proceeding.
+4. You should see the Webhooks section; click **Créer un webhook**
+   or **New Webhook**
+
+### 5b. Verify you're in LIVE mode, not Sandbox
+
+FedaPay has two environments: **Sandbox** (test) and **Live** (real).
+They're served on different subdomains:
+- **Live** (real payments): `https://live.fedapay.com`
+- **Sandbox** (test): `https://sandbox.fedapay.com`
+
+These have SEPARATE webhooks + SEPARATE secrets. You need the
+webhook on **Live** for real payments to fire it. Double-check the
+URL in your browser's address bar says `live.fedapay.com` before
+creating.
+
+If you also want a sandbox webhook for testing without real money:
+- Create the webhook in sandbox too, pointing to the same function URL
+- Sandbox generates a DIFFERENT secret — don't mix them up
+- Test in sandbox first, then repeat in Live for production
+
+### 5c. Create the webhook
+
+You'll see a form titled **Créer le webhook** with these fields:
+
+1. **URL**: paste the `fedapayWebhook` function URL from Phase 4
+   deploy output. Format:
+   ```
+   https://us-central1-<projectId>.cloudfunctions.net/fedapayWebhook
+   ```
+   Example for NLG:
+   ```
+   https://us-central1-schoolconnect-nlg.cloudfunctions.net/fedapayWebhook
+   ```
+
+2. **Désactiver la vérification SSL sur les requêtes HTTP ?**
+   → **Leave OFF** (do NOT toggle this on). Cloud Functions URLs have
+   valid SSL certificates automatically. Disabling SSL verification
+   would be a security downgrade for zero benefit.
+
+3. **Désactiver le webhook lorsque l'application génère des erreurs ?**
+   → **Leave OFF** (default). With this OFF, if your function goes
+   down and returns errors for 10 tries in a row, FedaPay will
+   auto-disable the webhook to prevent retry-queue overload. You'd
+   then re-enable it manually once the function is fixed. This is
+   the right safety behavior.
+   If you toggled this ON, FedaPay would keep retrying forever even
+   against a permanently-broken endpoint, which clogs things up.
+
+4. **Entêtes http (Clé / Valeur)**: leave both fields empty. You
+   don't need custom headers.
+
+5. **Type d'événements**: choose the **"Sélectionner les événements
+   à recevoir"** radio (NOT "Recevoir tous les événements"). A
+   checklist of events will appear. Check only:
+   - `transaction.approved`
+   
+   Our function silently ignores all other event types (pending,
+   declined, refunded all log and drop), but selecting only what
+   you need reduces invocation count and log noise.
+
+6. Click **Créer**
+
+### 5d. Copy the generated secret IMMEDIATELY
+
+After saving, FedaPay displays the **webhook secret ONCE**. This is
+the value you'll paste into `firebase functions:secrets:set
+FEDAPAY_WEBHOOK_SECRET` (Phase 3b).
+
+- The secret is a long random string (usually 32+ characters)
+- It's SHOWN ONLY AT CREATION — there's no "view secret" later. If
+  you lose it, you have to delete the webhook and create a new one
+  (which generates a new secret and you reconfigure).
+- **Copy it now**. Paste it somewhere temporary (a sticky note, a
+  password manager entry, anywhere). You'll use it in Phase 3b.
+
+### 5e. Now go set the secret on Firebase
+
+Go back to **Phase 3b** and run:
+
+```bash
+firebase functions:secrets:set FEDAPAY_WEBHOOK_SECRET --project schoolconnect-<id>
+# Paste the secret you just copied
+firebase deploy --only functions:fedapayWebhook --project schoolconnect-<id>
+```
+
+After redeploy, the function loads the secret on next cold start
+(within a few seconds of the next incoming webhook). At this point
+the pipeline is live.
+
+### 5f. Repeat for every school
+
+Each school goes through all of Phase 5 + Phase 3b independently:
+- Log into that school's FedaPay account
+- Switch to Live mode
+- Create the webhook with that school's function URL
+- Copy the secret
+- Set it in that school's Firebase project
+- Redeploy that school's fedapayWebhook function
+
+Don't reuse secrets across schools — each school has its own. Mixing
+them up means payments won't unlock the right school.
+
+### 5g. FedaPay retry behavior (what happens if things go wrong)
+
+If the webhook URL returns a non-2xx response or times out, FedaPay
+retries up to 9 times with exponential backoff, maxing out at about
+2 minutes between tries. After 10 consecutive failures, FedaPay
+auto-disables the webhook to prevent queue overload.
+
+**If that happens**: log into the FedaPay dashboard → Webhooks →
+pick the disabled webhook → re-enable it. Then go to the Logs page
+of that webhook and click **Redeliver** on any failed events you
+want to replay (e.g. a payment that didn't unlock the school because
+the webhook was down).
 
 ---
 
 ## Phase 6 — Test the webhook with a real small payment
 
 **Critical step — don't skip.**
+
+**Pre-flight checklist** — before running this test, confirm all of:
+- [ ] Phase 4 completed (function deployed)
+- [ ] Phase 5 completed (webhook registered in FedaPay dashboard in
+      Live mode, targeting your function URL)
+- [ ] Phase 3b completed (`FEDAPAY_WEBHOOK_SECRET` set on Firebase
+      and `fedapayWebhook` redeployed after)
+
+If any of those are missing, the payment will happen but the webhook
+either won't fire or will fail signature verification. Loop back
+and finish the missing step first.
+
+**Test sequence**:
 
 1. Log into the school as admin
 2. Deliberately force a locked state (use the vendor-app or set `isManualLock: true` in Firestore)
@@ -325,9 +483,30 @@ firebase functions:log --project schoolconnect-nlg --limit 20
 ```
 
 If the webhook didn't fire:
-- Check FedaPay dashboard → Webhooks → Deliveries (did FedaPay try to POST?)
-- Check Cloud Functions logs for signature verification failures
-- Confirm the secret in Phase 3 matches the one in FedaPay dashboard EXACTLY
+
+1. **Check FedaPay's delivery logs first**:
+   - FedaPay dashboard → Webhooks → click your webhook → **Logs** tab
+   - You'll see every delivery attempt with status (200, 401, 500, etc.)
+   - If NO log entry exists for the test payment: FedaPay didn't try
+     to send. Check that you selected `transaction.approved` as an
+     event type (Phase 5c step 3), and that you're in Live mode not
+     Sandbox.
+   - If log shows **401 Unauthorized**: signature mismatch. The
+     secret on Firebase doesn't match the one FedaPay is signing
+     with. Most likely causes:
+     - You copied the secret wrong (trailing space, missing char)
+     - You didn't redeploy after setting the secret (`firebase deploy
+       --only functions:fedapayWebhook ...`)
+     - You set the secret on the wrong project
+   - If log shows **500 / timeout**: the function itself crashed.
+     Look at Firebase logs for the stack trace.
+2. **If the secret needs to be replaced**: FedaPay won't let you
+   view the existing secret. Delete the webhook + re-create it
+   (Phase 5c) — this generates a new secret. Copy it, re-set on
+   Firebase (Phase 3b), redeploy.
+3. **Re-deliver the missed event**: FedaPay dashboard → Webhooks →
+   Logs tab → find the failed event → click **Redeliver**. This
+   replays the same payload to your (now-fixed) function.
 
 **Do NOT proceed to Phase 7 until Phase 6 works on at least one school.**
 
@@ -544,5 +723,13 @@ firebase functions:delete onProfDelete --project <sid> --force
 
 # 3. Admins can now self-service payments again via the old client path.
 ```
+
+**On the FedaPay side** (optional but tidier): after deleting the
+Cloud Function, the webhook URL becomes unreachable. FedaPay will
+retry 10 times per event then auto-disable the webhook. To avoid
+the noise in FedaPay's logs while rolled back:
+- Log into the FedaPay dashboard for each school
+- Webhooks → click the webhook → **Disable** (toggle)
+- When you re-enable functions later, re-enable the webhook too
 
 Data is safe either way — nothing in this rollout deletes user data.
