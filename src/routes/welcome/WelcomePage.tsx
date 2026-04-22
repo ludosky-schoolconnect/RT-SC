@@ -29,6 +29,7 @@ import { cn } from '@/lib/cn'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import { useSchoolStats } from '@/hooks/useSchoolStats'
 import { useGreeting } from '@/hooks/useGreeting'
+import { SchoolConnectLogo } from '@/components/ui/SchoolConnectLogo'
 
 const ROLE_ITEMS = [
   {
@@ -71,11 +72,9 @@ export default function WelcomePage() {
   const ville = config?.ville || ''
   const devise = config?.devise?.trim() || ''
 
-  // Format "LUNDI 22 AVRIL" — strip the year from `today` for a tighter
-  // hero. Full year goes in the footer.
-  const heroDate = useMemo(() => {
-    return today.replace(/ \d{4}$/, '').toUpperCase()
-  }, [today])
+  // Format "MERCREDI 22 AVRIL 2026" — full date in small caps for the
+  // hero top bar. Matches real school letterhead dating.
+  const heroDate = useMemo(() => today.toUpperCase(), [today])
 
   return (
     <div className="min-h-dvh bg-navy-dark text-white">
@@ -106,15 +105,10 @@ export default function WelcomePage() {
           }}
         />
 
-        {/* Top bar: brand + date */}
-        <div className="relative z-[2] flex items-center justify-between px-5 pt-6">
-          <div className="flex items-center gap-2">
-            <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-gold" />
-            <span className="text-[0.68rem] font-body font-medium tracking-[0.2em] uppercase text-white/70">
-              SchoolConnect
-            </span>
-          </div>
-          <span className="text-[0.62rem] font-body font-medium tracking-[0.25em] uppercase text-white/70">
+        {/* Top bar: brand logo + date */}
+        <div className="relative z-[2] flex items-center justify-between px-5 pt-5">
+          <SchoolConnectLogo size={32} animate={false} />
+          <span className="text-[0.62rem] font-body font-medium tracking-[0.22em] uppercase text-white/70">
             {heroDate}
           </span>
         </div>
@@ -205,7 +199,7 @@ export default function WelcomePage() {
             {greeting}.
           </h2>
           <p className="font-display italic text-white/70 text-base">
-            Qui êtes-vous aujourd'hui&nbsp;?
+            Qui êtes-vous&nbsp;?
           </p>
         </motion.section>
 
