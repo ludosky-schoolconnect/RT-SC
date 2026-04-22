@@ -1,0 +1,11 @@
+# Allow all crawlers full access — only the hub deployment is meant to
+# be discovered (per-school deploys are reached only via redirect from
+# the hub). Per-school URLs aren't linked from anywhere public, so even
+# though crawlers CAN index them, they won't find them organically.
+
+User-agent: *
+Allow: /
+
+# Hub-only sitemap. Per-school deploys ship the same file but their
+# sitemap.xml lists no school-specific public routes, so it's harmless.
+Sitemap: /sitemap.xml

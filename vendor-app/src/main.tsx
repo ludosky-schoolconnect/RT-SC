@@ -16,6 +16,8 @@ import { SchoolSelector } from '@/screens/SchoolSelector'
 import { LoginScreen } from '@/screens/LoginScreen'
 import { ConnectingScreen } from '@/screens/ConnectingScreen'
 import { CommandCenter } from '@/screens/CommandCenter'
+import { HubCommandCenter } from '@/screens/HubCommandCenter'
+import { BootstrapScreen } from '@/screens/BootstrapScreen'
 import { LogOut, ArrowLeftRight } from 'lucide-react'
 import './styles.css'
 
@@ -33,12 +35,20 @@ function AppRouter() {
   // Subtitle + right-slot action adapt based on phase
   const { subtitle, rightSlot } = useHeaderContext()
 
+  // When active, switch between school/hub command centers based on
+  // the saved role on the connected entry. Defaults to 'school' for
+  // backward compat with entries saved before the role field existed.
+  const isHubActive =
+    phase.kind === 'active' && phase.school.role === 'hub'
+
   return (
     <AppShell subtitle={subtitle} rightSlot={rightSlot}>
       {phase.kind === 'idle' && <SchoolSelector />}
       {phase.kind === 'connecting' && <ConnectingScreen />}
       {phase.kind === 'auth' && <LoginScreen />}
-      {phase.kind === 'active' && <CommandCenter />}
+      {phase.kind === 'bootstrap' && <BootstrapScreen />}
+      {phase.kind === 'active' && !isHubActive && <CommandCenter />}
+      {phase.kind === 'active' && isHubActive && <HubCommandCenter />}
     </AppShell>
   )
 }
@@ -76,6 +86,22 @@ function useHeaderContext() {
     return {
       subtitle: 'Authentification',
       rightSlot: null,
+    }
+  }
+
+  if (phase.kind === 'bootstrap') {
+    return {
+      subtitle: 'Initialisation',
+      rightSlot: (
+        <Button
+          variant="ghost"
+          icon={<ArrowLeftRight />}
+          onClick={switchSchool}
+          className="text-white/80 hover:text-white hover:bg-white/10"
+        >
+          <span className="hidden sm:inline">Annuler</span>
+        </Button>
+      ),
     }
   }
 

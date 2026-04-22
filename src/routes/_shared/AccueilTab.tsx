@@ -4,26 +4,29 @@
  * Personal HOME for the élève. Multi-widget at-a-glance dashboard:
  *
  *   1. "Mon suivi" — LIVE widgets reading real Firestore data:
- *        • Featured bulletin (latest annual or last period)
+ *        • Cours du jour
  *        • Heures de colle (per-period breakdown)
+ *        • Annonces
  *
- *   2. "À venir" — preview widgets prefiguring upcoming modules:
- *        • English Hub (legacy feature, dedicated phase later)
- *        • Annonces (Phase 5b)
+ *   2. "Scolarité" — PaiementWidget.
+ *
+ *   3. "Apprentissage" — English Hub (daily word + quiz + streak).
  *
  * For the parent equivalent, see ParentAccueilTab — parent-framed
  * greeting and parent-specific widgets.
  */
 
 import { motion } from 'framer-motion'
-import { GraduationCap, Globe } from 'lucide-react'
+import { GraduationCap } from 'lucide-react'
 
 import { HeuresColleWidget } from '@/routes/_shared/colles/HeuresColleWidget'
 import { AnnoncesWidget } from '@/routes/_shared/annonces/AnnoncesWidget'
 import { CoursDuJourWidget } from '@/routes/_shared/emploi/CoursDuJourWidget'
+import { PaiementWidget } from '@/routes/_shared/PaiementWidget'
+import { EnglishHubWidget } from '@/routes/_shared/EnglishHubWidget'
+import { LaboWidget } from '@/routes/_shared/labo/LaboWidget'
+import { BilanAnnuelWidget } from '@/routes/_shared/BilanAnnuelWidget'
 import { useGreeting } from '@/hooks/useGreeting'
-
-import { PreviewWidget } from './accueilPrimitives'
 
 interface AccueilTabProps {
   classeId: string
@@ -75,6 +78,15 @@ export function AccueilTab({
           </p>
         </motion.header>
 
+        {/* Bilan annuel — only rendered once the PP closes the year.
+            Placed at the very top so the end-of-year verdict is the
+            first thing the student sees. Self-hides otherwise. */}
+        <BilanAnnuelWidget
+          classeId={classeId}
+          eleveId={eleveId}
+          eleveName={eleveName}
+        />
+
         <section className="pt-2 space-y-3">
           <p className="text-[0.7rem] uppercase tracking-[0.2em] text-ink-500 font-bold px-1">
             Mon suivi
@@ -89,15 +101,17 @@ export function AccueilTab({
 
         <section className="pt-2 space-y-3">
           <p className="text-[0.7rem] uppercase tracking-[0.2em] text-ink-500 font-bold px-1">
-            À venir
+            Scolarité
           </p>
-          <PreviewWidget
-            icon={<Globe className="h-5 w-5" />}
-            iconTone="info"
-            label="English Hub"
-            description="Mot du jour, quiz, streak"
-            decorative="🇬🇧"
-          />
+          <PaiementWidget classeId={classeId} eleveId={eleveId} />
+        </section>
+
+        <section className="pt-2 space-y-3">
+          <p className="text-[0.7rem] uppercase tracking-[0.2em] text-ink-500 font-bold px-1">
+            Apprentissage
+          </p>
+          <EnglishHubWidget classeId={classeId} eleveId={eleveId} />
+          <LaboWidget />
         </section>
       </div>
     </div>

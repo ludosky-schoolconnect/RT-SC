@@ -21,6 +21,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { useEleveBulletinList, type BulletinSummary } from '@/hooks/useEleveBulletinList'
 import { ModalBulletinDetail } from '@/routes/_shared/bulletins/ModalBulletinDetail'
+import { statutLabel, type Genre } from '@/lib/statutLabel'
 import { cn } from '@/lib/cn'
 import type { Periode } from '@/types/models'
 
@@ -114,6 +115,7 @@ export function BulletinsTab({
       {data.annual && (
         <AnnualBulletinCard
           summary={data.annual}
+          genre={data.genre}
           onOpen={openAnnual}
         />
       )}
@@ -215,9 +217,11 @@ function PeriodBulletinCard({
 
 function AnnualBulletinCard({
   summary,
+  genre,
   onOpen,
 }: {
   summary: BulletinSummary
+  genre?: Genre
   onOpen: () => void
 }) {
   const passing = summary.moyenneGenerale >= 10
@@ -270,7 +274,7 @@ function AnnualBulletinCard({
               <Sparkles className="h-3 w-3 text-gold" aria-hidden />
             </div>
             <p className="font-display text-[1.4rem] text-navy font-bold leading-tight">
-              {summary.statutAnnuel ?? 'En attente'}
+              {statutLabel(summary.statutAnnuel, genre)}
             </p>
             <div className="flex items-baseline gap-3 mt-2 flex-wrap">
               <span

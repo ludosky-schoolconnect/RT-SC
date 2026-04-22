@@ -6,15 +6,15 @@
  */
 
 import { useState } from 'react'
-import { School, Plus, Clock, Trash2, Database } from 'lucide-react'
+import { School, Plus, Clock, Trash2, Database, Sparkles, Globe } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { removeSchool, type SavedSchool } from '@/lib/schoolsStorage'
 import { Button } from '@/ui/Button'
 import { AddSchoolDialog } from './AddSchoolDialog'
 
 export function SchoolSelector() {
-  const { schools, refreshSchools, pickSchool } = useSession()
-  const [showAdd, setShowAdd] = useState(false)
+  const { schools, refreshSchools, pickSchool, startBootstrap } = useSession()
+  const [dialogMode, setDialogMode] = useState<'add' | 'init' | null>(null)
   const [connectingId, setConnectingId] = useState<string | null>(null)
 
   async function handlePick(school: SavedSchool) {
@@ -36,6 +36,39 @@ export function SchoolSelector() {
     refreshSchools()
   }
 
+  /** Called once a school has been saved to localStorage by the
+   *  AddSchoolDialog. If the user opened the dialog in 'init' mode,
+   *  we chain directly into the bootstrap flow — no extra clicks. */
+  async function handleDialogAdded(saved: {
+    id: string
+    name: string
+    config: SavedSchool['config'] | null
+  }) {
+    const wasInit = dialogMode === 'init'
+    setDialogMode(null)
+    refreshSchools()
+
+    if (wasInit && saved.config) {
+      // Re-read from localStorage to get the canonical SavedSchool
+      // shape (avoids any subtle mismatch). Safe because upsertSchool
+      // already wrote it synchronously.
+      const freshList = (await import('@/lib/schoolsStorage')).loadSavedSchools()
+      const school = freshList.find((s) => s.id === saved.id)
+      if (school) {
+        setConnectingId(school.id)
+        try {
+          await startBootstrap(school)
+        } catch {
+          alert(
+            `Impossible de se connecter à ${saved.name}. Vérifiez la configuration Firebase.`
+          )
+        } finally {
+          setConnectingId(null)
+        }
+      }
+    }
+  }
+
   return (
     <div>
       <div className="mb-5">
@@ -46,49 +79,71 @@ export function SchoolSelector() {
           Quelle école gérer ?
         </h1>
         <p className="text-[0.85rem] text-ink-500 mt-1 leading-relaxed">
-          Choisissez une école enregistrée ou ajoutez-en une nouvelle.
+          Choisissez une école enregistrée, ou créez-en une nouvelle.
         </p>
       </div>
 
       {schools.length === 0 ? (
-        <EmptyState onAdd={() => setShowAdd(true)} />
+        <EmptyState
+          onAdd={() => setDialogMode('add')}
+          onInit={() => setDialogMode('init')}
+        />
       ) : (
-        <div className="space-y-2">
-          {schools.map((school) => (
-            <SchoolRow
-              key={school.id}
-              school={school}
-              connecting={connectingId === school.id}
-              disabled={connectingId !== null && connectingId !== school.id}
-              onPick={() => handlePick(school)}
-              onRemove={() => handleRemove(school)}
-            />
-          ))}
+        <>
+          <div className="space-y-2">
+            {schools.map((school) => (
+              <SchoolRow
+                key={school.id}
+                school={school}
+                connecting={connectingId === school.id}
+                disabled={connectingId !== null && connectingId !== school.id}
+                onPick={() => handlePick(school)}
+                onRemove={() => handleRemove(school)}
+              />
+            ))}
+          </div>
 
-          <button
-            type="button"
-            onClick={() => setShowAdd(true)}
-            className="w-full flex items-center justify-center gap-2 rounded-md border-2 border-dashed border-ink-200 hover:border-navy/40 hover:bg-info-bg/50 text-ink-500 hover:text-navy px-4 py-3.5 text-[0.85rem] font-semibold transition-colors min-h-touch mt-4"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Ajouter une école
-          </button>
-        </div>
+          {/* Two distinct actions: add an already-configured school vs
+              initialize a fresh empty Firebase project. Both accept
+              the same config paste — only the next step differs. */}
+          <div className="mt-5 space-y-2">
+            <Button
+              variant="primary"
+              icon={<Sparkles />}
+              onClick={() => setDialogMode('init')}
+              fullWidth
+            >
+              Initialiser une nouvelle école
+            </Button>
+            <button
+              type="button"
+              onClick={() => setDialogMode('add')}
+              className="w-full flex items-center justify-center gap-2 rounded-md border-2 border-dashed border-ink-200 hover:border-navy/40 hover:bg-info-bg/50 text-ink-500 hover:text-navy px-4 py-3 text-[0.85rem] font-semibold transition-colors min-h-touch"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              Ajouter une école déjà configurée
+            </button>
+          </div>
+        </>
       )}
 
       <AddSchoolDialog
-        open={showAdd}
-        onClose={() => setShowAdd(false)}
-        onAdded={() => {
-          setShowAdd(false)
-          refreshSchools()
-        }}
+        open={dialogMode !== null}
+        mode={dialogMode ?? 'add'}
+        onClose={() => setDialogMode(null)}
+        onAdded={handleDialogAdded}
       />
     </div>
   )
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState({
+  onAdd,
+  onInit,
+}: {
+  onAdd: () => void
+  onInit: () => void
+}) {
   return (
     <div className="rounded-xl bg-white border-[1.5px] border-ink-100 px-6 py-10 text-center shadow-xs">
       <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-info-bg border border-navy/15 mb-3">
@@ -98,12 +153,27 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
         Aucune école enregistrée
       </p>
       <p className="text-[0.85rem] text-ink-500 mt-2 leading-relaxed max-w-sm mx-auto">
-        Ajoutez votre première école pour commencer. Vous aurez besoin de
-        la configuration Firebase de l'école.
+        Deux manières de commencer — selon que votre projet Firebase
+        est tout neuf ou déjà configuré.
       </p>
-      <Button variant="primary" icon={<Plus />} onClick={onAdd} className="mt-5">
-        Ajouter une école
-      </Button>
+      <div className="mt-5 space-y-2 max-w-xs mx-auto">
+        <Button
+          variant="primary"
+          icon={<Sparkles />}
+          onClick={onInit}
+          fullWidth
+        >
+          Initialiser une nouvelle école
+        </Button>
+        <Button
+          variant="secondary"
+          icon={<Plus />}
+          onClick={onAdd}
+          fullWidth
+        >
+          Ajouter une école existante
+        </Button>
+      </div>
     </div>
   )
 }
@@ -121,6 +191,7 @@ function SchoolRow({
   onPick: () => void
   onRemove: () => void
 }) {
+  const isHub = school.role === 'hub'
   return (
     <div className="rounded-md bg-white border-[1.5px] border-ink-100 hover:border-navy/25 transition-colors shadow-xs flex items-stretch">
       <button
@@ -129,13 +200,30 @@ function SchoolRow({
         disabled={disabled || connecting}
         className="flex-1 flex items-center gap-3 px-4 py-3.5 text-left disabled:opacity-50 disabled:cursor-not-allowed min-h-touch"
       >
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-info-bg border border-navy/15 shrink-0">
-          <School className="h-4 w-4 text-navy" aria-hidden />
+        <div
+          className={
+            isHub
+              ? 'flex h-10 w-10 items-center justify-center rounded-md bg-gold/15 border border-gold/40 shrink-0'
+              : 'flex h-10 w-10 items-center justify-center rounded-md bg-info-bg border border-navy/15 shrink-0'
+          }
+        >
+          {isHub ? (
+            <Globe className="h-4 w-4 text-gold-dark" aria-hidden />
+          ) : (
+            <School className="h-4 w-4 text-navy" aria-hidden />
+          )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-display text-[0.98rem] font-semibold text-navy leading-tight truncate">
-            {school.name}
-          </p>
+          <div className="flex items-center gap-1.5">
+            <p className="font-display text-[0.98rem] font-semibold text-navy leading-tight truncate">
+              {school.name}
+            </p>
+            {isHub && (
+              <span className="shrink-0 inline-flex items-center rounded bg-gold/15 text-gold-dark px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider ring-1 ring-gold/30">
+                Hub
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1.5 mt-0.5 text-[0.72rem] text-ink-400">
             <span className="font-mono truncate">
               {school.config.projectId}

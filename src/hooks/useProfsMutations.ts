@@ -111,8 +111,64 @@ export function useDeleteProf() {
         }
       }
 
-      // Also remove as profPrincipal if any class had them set
-      // (we'd need to query — skip for now, daily-ops modules will catch it)
+      // Cascade-delete any seances (emploi du temps entries) referencing
+      // this prof. Without this cleanup, the schedule grid keeps showing
+      // ghost slots that nobody can teach.
+      //
+      // We also clear profPrincipalId on any class that had this prof as
+      // PP. Without this, the class carries a stale PP reference that
+      // blocks/confuses the class-detail view.
+      try {
+        const { collectionGroup, query: fsQuery, where, getDocs } =
+          await import('firebase/firestore')
+        const { db } = await import('@/firebase')
+        const seancesSnap = await getDocs(
+          fsQuery(
+            collectionGroup(db, 'seances'),
+            where('profId', '==', profId)
+          )
+        )
+        for (const sd of seancesSnap.docs) {
+          // Only delete seances under /emploisDuTemps/{cid}/seances.
+          // The root /seances collection (legacy) is matched by
+          // collectionGroup too but shouldn't be touched.
+          if (sd.ref.path.startsWith('emploisDuTemps/')) {
+            await deleteDoc(sd.ref)
+          }
+        }
+      } catch (e) {
+        console.warn(
+          '[useDeleteProf] seances cleanup failed:',
+          (e as Error).message
+        )
+      }
+
+      // Clear profPrincipalId from any class where this prof was PP
+      try {
+        const { collection, getDocs, query: fsQuery, where } = await import(
+          'firebase/firestore'
+        )
+        const { db } = await import('@/firebase')
+        const { classesCol } = await import('@/lib/firestore-keys')
+        const ppSnap = await getDocs(
+          fsQuery(
+            collection(db, classesCol()),
+            where('profPrincipalId', '==', profId)
+          )
+        )
+        for (const cd of ppSnap.docs) {
+          try {
+            await updateDoc(cd.ref, { profPrincipalId: '' })
+          } catch {
+            // skip per-class failures
+          }
+        }
+      } catch (e) {
+        console.warn(
+          '[useDeleteProf] profPrincipal cleanup failed:',
+          (e as Error).message
+        )
+      }
 
       await deleteDoc(docRef(professeurDoc(profId)))
     },
@@ -130,6 +186,8 @@ export function useDeleteProf() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['profs'] })
       qc.invalidateQueries({ queryKey: ['classes'] })
+      // Emploi du temps needs to reflect removed seances
+      qc.invalidateQueries({ queryKey: ['seances'] })
     },
   })
 }

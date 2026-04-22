@@ -44,6 +44,11 @@ type Phase =
   | { kind: 'connecting'; school: SavedSchool }
   | { kind: 'auth'; school: SavedSchool; firebase: VendorFirebase }
   | {
+      kind: 'bootstrap'
+      school: SavedSchool
+      firebase: VendorFirebase
+    }
+  | {
       kind: 'active'
       school: SavedSchool
       firebase: VendorFirebase
@@ -56,6 +61,12 @@ interface SessionContextValue {
   refreshSchools: () => void
   /** Move from idle → connecting → auth by picking a school */
   pickSchool: (school: SavedSchool) => Promise<void>
+  /** Move from idle → connecting → bootstrap for a NEW school that
+   *  hasn't been initialized yet. Skips the auth phase since we'll
+   *  be creating the admin user as part of bootstrap. */
+  startBootstrap: (school: SavedSchool) => Promise<void>
+  /** Move from bootstrap → active once the new admin user is signed in */
+  completeBootstrap: (user: User) => void
   /** Move from auth → active by completing Firebase Auth login */
   completeAuth: (user: User) => void
   /** Log out but stay on the same school (auth phase) */
@@ -103,6 +114,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const startBootstrap = useCallback(async (school: SavedSchool) => {
+    setPhase({ kind: 'connecting', school })
+    try {
+      const firebase = await connectToSchool(school.config)
+      setPhase({ kind: 'bootstrap', school, firebase })
+    } catch (err) {
+      console.error('[session] startBootstrap connect failed:', err)
+      setPhase({ kind: 'idle' })
+      throw err
+    }
+  }, [])
+
+  const completeBootstrap = useCallback((user: User) => {
+    setPhase((p) => {
+      if (p.kind !== 'bootstrap') return p
+      markSchoolUsed(p.school.id)
+      setSchools(loadSavedSchools())
+      return {
+        kind: 'active',
+        school: p.school,
+        firebase: p.firebase,
+        user,
+      }
+    })
+  }, [])
+
   const logoutKeepSchool = useCallback(async () => {
     setPhase((p) => {
       if (p.kind !== 'active') return p
@@ -126,6 +163,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     schools,
     refreshSchools,
     pickSchool,
+    startBootstrap,
+    completeBootstrap,
     completeAuth,
     logoutKeepSchool,
     switchSchool,

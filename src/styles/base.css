@@ -13,7 +13,9 @@
 }
 
 html {
-  font-size: 16px;
+  /* Base font size is driven by a CSS variable so user Settings can
+     override it at runtime. Default 16px matches Tailwind's `text-base`. */
+  font-size: var(--app-font-size, 16px);
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
 }

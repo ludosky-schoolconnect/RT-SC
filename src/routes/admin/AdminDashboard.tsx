@@ -31,6 +31,11 @@ import {
   Megaphone,
   UserPlus,
   CreditCard,
+  Library,
+  Award,
+  Trophy,
+  BarChart3,
+  MonitorPlay,
 } from 'lucide-react'
 import { DashboardLayout, type DashboardTab } from '@/components/layout/DashboardLayout'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
@@ -43,8 +48,15 @@ import { AnnoncesAdminTab } from './tabs/annonces/AnnoncesAdminTab'
 import { EmploiAdminTab } from './tabs/emploi/EmploiAdminTab'
 import { InscriptionsAdminTab } from './tabs/inscriptions/InscriptionsAdminTab'
 import { AbonnementTab } from './tabs/abonnement/AbonnementTab'
+import { AnnalesAdminTab } from './tabs/annales/AnnalesAdminTab'
+import { CivismeAdminTab } from './tabs/civisme/CivismeAdminTab'
+import { PalmaresAdminTab } from './tabs/palmares/PalmaresAdminTab'
+import { AnalytiquesTab } from './tabs/analytiques/AnalytiquesTab'
+import { VisioHostTab } from '@/routes/_shared/visio/VisioHostTab'
 import { VieScolaireTab } from '@/routes/_shared/absences/VieScolaireTab'
 import { TabPlaceholder } from './tabs/TabPlaceholder'
+
+import { RolloverNagBanner } from './RolloverNagBanner'
 
 const TABS: DashboardTab[] = [
   { id: 'classes',      label: 'Classes',      icon: <SchoolIcon className="h-full w-full" /> },
@@ -54,6 +66,11 @@ const TABS: DashboardTab[] = [
   { id: 'inscriptions', label: 'Inscriptions', icon: <UserPlus className="h-full w-full" /> },
   { id: 'emploi',       label: 'Emploi',       icon: <CalendarClock className="h-full w-full" /> },
   { id: 'annonces',     label: 'Annonces',     icon: <Megaphone className="h-full w-full" /> },
+  { id: 'annales',      label: 'Annales',      icon: <Library className="h-full w-full" /> },
+  { id: 'civisme',      label: 'Civisme',      icon: <Award className="h-full w-full" /> },
+  { id: 'visio',        label: 'Visio',        icon: <MonitorPlay className="h-full w-full" /> },
+  { id: 'palmares',     label: 'Palmarès',     icon: <Trophy className="h-full w-full" /> },
+  { id: 'analytiques',  label: 'Analytiques',  icon: <BarChart3 className="h-full w-full" /> },
   { id: 'annee',        label: 'Année',        icon: <CalendarDays className="h-full w-full" /> },
   { id: 'abonnement',   label: 'Abonnement',   icon: <CreditCard className="h-full w-full" /> },
 ]
@@ -68,6 +85,9 @@ export default function AdminDashboard() {
       schoolName={config?.nom}
       tabs={TABS}
       defaultTab="classes"
+      extraBanner={(setTab) => (
+        <RolloverNagBanner onJumpToAnnee={() => setTab('annee')} />
+      )}
       renderTab={(activeTab) => {
         switch (activeTab) {
           case 'classes':
@@ -90,6 +110,16 @@ export default function AdminDashboard() {
             return <EmploiAdminTab />
           case 'annonces':
             return <AnnoncesAdminTab />
+          case 'annales':
+            return <AnnalesAdminTab />
+          case 'civisme':
+            return <CivismeAdminTab />
+          case 'visio':
+            return <VisioHostTab scope="admin" />
+          case 'palmares':
+            return <PalmaresAdminTab />
+          case 'analytiques':
+            return <AnalytiquesTab />
           case 'annee':
             return <AnneeTab />
           case 'abonnement':

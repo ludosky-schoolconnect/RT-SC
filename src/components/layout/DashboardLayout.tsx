@@ -35,7 +35,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { signOut } from 'firebase/auth'
-import { LogOut, ChevronDown, Building2, MoreHorizontal, X } from 'lucide-react'
+import { LogOut, ChevronDown, Building2, MoreHorizontal, X, Settings as SettingsIcon } from 'lucide-react'
 import { auth } from '@/firebase'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/stores/toast'
@@ -43,6 +43,7 @@ import { useConfirm } from '@/stores/confirm'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { SchoolConnectLogo } from '@/components/ui/SchoolConnectLogo'
 import { useDismissibleLayer } from '@/components/ui/useDismissibleLayer'
+import { SettingsModal } from '@/components/settings/SettingsModal'
 import { SubscriptionWarningBanner } from './SubscriptionWarningBanner'
 import { cn } from '@/lib/cn'
 import { useOverflowTabs } from './useOverflowTabs'
@@ -74,6 +75,13 @@ interface DashboardLayoutProps {
    * raise to 5 if icons fit comfortably without labels truncating.
    */
   mobileDirectTabs?: number
+  /**
+   * Optional additional banner rendered above tab content, below the
+   * standard SubscriptionWarningBanner. The render function receives
+   * a setTab callback so banners can programmatically switch tabs
+   * (e.g. "Aller à Année" from the rollover nag).
+   */
+  extraBanner?: (setTab: (tabId: string) => void) => ReactNode
 }
 
 export function DashboardLayout({
@@ -83,6 +91,7 @@ export function DashboardLayout({
   renderTab,
   schoolName,
   mobileDirectTabs = 4,
+  extraBanner,
 }: DashboardLayoutProps) {
   const navigate = useNavigate()
   const toast = useToast()
@@ -166,6 +175,11 @@ export function DashboardLayout({
             it's always visible regardless of which tab is active. */}
         <SubscriptionWarningBanner />
 
+        {/* Caller-supplied extra banner (e.g. rollover-in-progress
+            nag). Like the subscription banner, it sits above tab
+            content. Receives setTab so the banner can jump tabs. */}
+        {extraBanner?.(setTab)}
+
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -210,6 +224,7 @@ function DashHeader({
   onLogout,
 }: DashHeaderProps) {
   const [open, setOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Android back button + Escape close the dropdown (not navigate away).
@@ -306,6 +321,18 @@ function DashHeader({
                   type="button"
                   onClick={() => {
                     setOpen(false)
+                    setSettingsOpen(true)
+                  }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-[0.875rem] text-ink-800 hover:bg-ink-50 transition-colors min-h-touch border-b border-ink-100"
+                  role="menuitem"
+                >
+                  <SettingsIcon className="h-4 w-4 text-ink-400" aria-hidden />
+                  Préférences
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false)
                     onLogout()
                   }}
                   className="w-full flex items-center gap-2.5 px-4 py-3 text-[0.875rem] text-ink-800 hover:bg-ink-50 transition-colors min-h-touch"
@@ -319,6 +346,12 @@ function DashHeader({
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Settings modal — shared across all roles */}
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </header>
   )
 }

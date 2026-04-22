@@ -29,6 +29,19 @@ export interface SavedSchool {
   config: FirebaseOptions
   /** Millisecond timestamp of last successful connection */
   lastUsed?: number
+  /**
+   * What this Firebase project represents in the SchoolConnect
+   * ecosystem:
+   *   - 'school' (default): a per-school Firebase project that hosts
+   *     one school's Firestore, Auth, classes, students, bulletins…
+   *   - 'hub': the common landing-page Firebase project that holds
+   *     /school_codes and /cms/about (shared across all schools).
+   *     Routed to a dedicated HubCommandCenter on connect, since the
+   *     normal subscription management UI doesn't apply.
+   * Missing/undefined means 'school' (backward compat with saved
+   * entries from before this field existed).
+   */
+  role?: 'school' | 'hub'
 }
 
 /**

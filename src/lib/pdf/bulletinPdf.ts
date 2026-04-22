@@ -19,6 +19,7 @@ import type {
   BulletinAnnualView,
   BulletinPeriodView,
 } from '@/lib/bulletinView'
+import { statutLabel } from '@/lib/statutLabel'
 
 // jspdf-autotable's RowInput type isn't reliably exported across versions,
 // so we use a structural alias loose enough to cover all cases we use.
@@ -458,8 +459,14 @@ function drawAnnualBody(
   // @ts-expect-error
   let y = doc.lastAutoTable.finalY + 8
 
-  // Statut badge centered
-  const statutText = `${view.statutAnnuel.toUpperCase()} EN CLASSE SUPÉRIEURE`
+  // Statut badge centered — respect feminine agreement for girls
+  const statutGendered = statutLabel(
+    view.statutAnnuel,
+    view.eleve.genre === 'M' || view.eleve.genre === 'F'
+      ? view.eleve.genre
+      : null
+  )
+  const statutText = `${statutGendered.toUpperCase()} EN CLASSE SUPÉRIEURE`
   const statutColor = view.statutAnnuel === 'Admis' ? COLOR_SUCCESS : COLOR_DANGER
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)

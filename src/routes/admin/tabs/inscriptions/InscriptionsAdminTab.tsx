@@ -25,6 +25,7 @@ import { cn } from '@/lib/cn'
 import { usePreInscriptions } from '@/hooks/usePreInscriptions'
 import { DemandesView } from './DemandesView'
 import { RendezVousView } from './RendezVousView'
+import { QRPreInscriptionCard } from './QRPreInscriptionCard'
 
 type Mode = 'demandes' | 'rendezvous'
 
@@ -80,6 +81,13 @@ export function InscriptionsAdminTab() {
           {mode === 'rendezvous' && <RendezVousView list={list} />}
         </>
       )}
+
+      {/* QR code for parents — always visible so admin can grab it
+          whenever they need to share. Placed at the bottom so it
+          doesn't crowd the operational workflow above. */}
+      <div className="mt-6">
+        <QRPreInscriptionCard />
+      </div>
     </Section>
   )
 }

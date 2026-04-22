@@ -15,6 +15,7 @@ import { motion } from 'framer-motion'
 import { Award, ChevronRight, FileText, Sparkles, Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { BulletinSummary } from '@/hooks/useEleveBulletinList'
+import { statutLabel, type Genre } from '@/lib/statutLabel'
 import { cn } from '@/lib/cn'
 
 // ─── Featured bulletin card ────────────────────────────────
@@ -23,10 +24,13 @@ export function FeaturedBulletinCard({
   summary,
   mode,
   onOpen,
+  genre,
 }: {
   summary: BulletinSummary
   mode: 'periode' | 'annuelle'
   onOpen: () => void
+  /** Eleve's genre for French feminine agreement on "Admis(e)"/"Échoué(e)" */
+  genre?: Genre
 }) {
   const passing = summary.moyenneGenerale >= 10
   const isAnnual = mode === 'annuelle'
@@ -90,7 +94,9 @@ export function FeaturedBulletinCard({
         </div>
 
         <p className="font-display text-[1.65rem] sm:text-3xl text-navy font-bold leading-[1.1] mb-3">
-          {isAnnual ? (summary.statutAnnuel ?? 'En attente') : summary.periode}
+          {isAnnual
+            ? statutLabel(summary.statutAnnuel, genre)
+            : summary.periode}
         </p>
 
         <div className="flex items-baseline gap-3 flex-wrap">

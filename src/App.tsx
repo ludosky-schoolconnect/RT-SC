@@ -6,7 +6,7 @@
  * - Lazy-loads each role's dashboard so users only download the bundle they need.
  */
 
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 
 import { AuthProvider } from '@/components/guards/AuthProvider'
@@ -14,6 +14,7 @@ import { SubscriptionGuard } from '@/components/guards/SubscriptionGuard'
 import { ProtectedRoute } from '@/components/guards/ProtectedRoute'
 import { ToastContainer } from '@/components/ui/ToastContainer'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { useSettingsStore, applyFontSize } from '@/stores/settings'
 
 // Eagerly loaded — small public-facing pages
 import LandingPage from '@/routes/landing/LandingPage'
@@ -53,6 +54,14 @@ function RouteFallback() {
 }
 
 export default function App() {
+  // Apply persisted font-size to the root element on mount + whenever
+  // the user changes it in Settings. Done once at the top level so
+  // every route benefits without per-page wiring.
+  const fontSize = useSettingsStore((s) => s.fontSize)
+  useEffect(() => {
+    applyFontSize(fontSize)
+  }, [fontSize])
+
   return (
     <AuthProvider>
       <SubscriptionGuard>

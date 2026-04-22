@@ -1,0 +1,20 @@
+{
+  "name": "SchoolConnect — Portail Scolaire",
+  "short_name": "SchoolConnect",
+  "description": "Plateforme de gestion scolaire pour les établissements au Bénin.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B2545",
+  "theme_color": "#0B2545",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

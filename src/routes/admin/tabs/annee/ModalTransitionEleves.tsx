@@ -23,6 +23,7 @@ import {
   Trash2,
   GraduationCap,
   AlertTriangle,
+  Archive,
   Award,
   TrendingDown,
   UserMinus,
@@ -44,6 +45,7 @@ import { useClasses } from '@/hooks/useClasses'
 import { useEleves } from '@/hooks/useEleves'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import { useToast } from '@/stores/toast'
+import { useConfirm } from '@/stores/confirm'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   executeTransition,
@@ -58,6 +60,12 @@ import { cn } from '@/lib/cn'
 interface ModalTransitionElevesProps {
   open: boolean
   onClose: () => void
+  /**
+   * Called when admin asks to chain into the archive flow after
+   * completing the last remaining class's transition. Parent should
+   * close this modal and open ModalArchiveAnnee.
+   */
+  onRequestArchive?: () => void
 }
 
 type Step = 'select-class' | 'classify' | 'destinations' | 'review' | 'execute' | 'done'
@@ -72,8 +80,13 @@ const NEXT_NIVEAU: Partial<Record<Niveau, Niveau>> = {
   '1ère': 'Terminale',
 }
 
-export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesProps) {
+export function ModalTransitionEleves({
+  open,
+  onClose,
+  onRequestArchive,
+}: ModalTransitionElevesProps) {
   const toast = useToast()
+  const askConfirm = useConfirm()
   const qc = useQueryClient()
   const { data: config } = useEcoleConfig()
   const { data: classes = [] } = useClasses()
@@ -116,6 +129,32 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
       setTotalAttempted(0)
     }
   }, [open])
+
+  // Auto-chain: when we land on the Done step AND all classes have been
+  // transitioned (this year's full set), automatically hand off to the
+  // archive modal after a brief delay. The delay lets the user see the
+  // "Transition terminée" confirmation for ≈2s before the archive
+  // preflight appears. Admin can still click "Archiver maintenant"
+  // manually to skip the delay. Admin can also click "Fermer" during
+  // the delay to abort the auto-chain (they'll be nagged by the global
+  // banner instead).
+  useEffect(() => {
+    if (step !== 'done') return
+    if (!onRequestArchive) return
+    // Use the same "all done?" check used by the footer renderer
+    const transitionedSet = new Set(config?.classesTransitioned ?? [])
+    const allDone =
+      classes.length > 0 && classes.every((c) => transitionedSet.has(c.id))
+    if (!allDone) return
+
+    const timer = setTimeout(() => {
+      onRequestArchive()
+    }, 2000)
+    return () => clearTimeout(timer)
+    // We intentionally include config?.classesTransitioned in deps so
+    // the effect re-evaluates if the flag updates while Done is visible
+    // (e.g. query cache refresh completing after the transition write).
+  }, [step, onRequestArchive, config?.classesTransitioned, classes])
 
   // Reset per-class state whenever the user picks a different source class.
   // Without this, decisions from a previously-viewed class linger and
@@ -246,6 +285,9 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
         qc.invalidateQueries({ queryKey: ['classe', dId, 'eleve-count'] })
       }
       qc.invalidateQueries({ queryKey: ['school-stats'] })
+      // Refresh ecole/config so the "transition in progress" banner
+      // flips on as soon as the first class is processed.
+      qc.invalidateQueries({ queryKey: ['ecole', 'config'] })
     } catch (err) {
       console.error('[Transition] fatal:', err)
       toast.error("Échec de la transition. Voir la console pour les détails.")
@@ -261,6 +303,49 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
         ],
       })
     }
+  }
+
+  // ── Close intercept ──────────────────────────────────────
+  //
+  // When admin tries to close mid-flow (after processing ≥1 class
+  // but before all classes are done), we ask for confirmation with
+  // a warning about NOT starting new-year operations until archive
+  // runs. State is persisted in Firestore so admin can reopen and
+  // resume later.
+  //
+  // We don't intercept when:
+  //   - No classes transitioned yet (nothing to lose)
+  //   - All classes already done (the auto-chain will handle it, or
+  //     the archive nag banner takes over)
+  //   - Execute step (already blocked via disableOverlayClose)
+  //   - Done step (terminal — user reviewing results)
+  async function requestClose() {
+    const transitionedCount = config?.classesTransitioned?.length ?? 0
+    const totalClasses = classes.length
+    const someButNotAll =
+      transitionedCount > 0 && transitionedCount < totalClasses
+    const midFlow =
+      step === 'classify' ||
+      step === 'destinations' ||
+      step === 'review'
+
+    // No confirmation needed — just close
+    if (!someButNotAll && !midFlow) {
+      onClose()
+      return
+    }
+    // Mid-active-step with pending decisions the admin hasn't committed
+    // yet, OR some classes already transitioned and more remaining
+    const confirmed = await askConfirm({
+      title: 'Interrompre la clôture ?',
+      message: someButNotAll
+        ? `Vous avez traité ${transitionedCount} classe${transitionedCount > 1 ? 's' : ''} sur ${totalClasses}. Votre progression est sauvegardée — vous pourrez reprendre plus tard depuis la Zone dangereuse. Tant que l'archivage n'est pas lancé, ne commencez pas la nouvelle année (inscriptions, création de classes…) car cela corromprait les données en transition.`
+        : "Vos décisions pour cette classe ne sont pas encore enregistrées. Fermer maintenant annulera tout ce que vous avez saisi pour cette classe.",
+      confirmLabel: 'Interrompre et fermer',
+      cancelLabel: 'Continuer la clôture',
+      variant: 'warning',
+    })
+    if (confirmed) onClose()
   }
 
   // ── Render per step ──────────────────────────────────────
@@ -307,8 +392,19 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
         )
       case 'execute':
         return <StepExecute progress={progress} />
-      case 'done':
-        return <StepDone result={result} totalAttempted={totalAttempted} />
+      case 'done': {
+        const transitionedSet = new Set(config?.classesTransitioned ?? [])
+        const allClassesDone =
+          classes.length > 0 &&
+          classes.every((c) => transitionedSet.has(c.id))
+        return (
+          <StepDone
+            result={result}
+            totalAttempted={totalAttempted}
+            allClassesDone={allClassesDone}
+          />
+        )
+      }
     }
   }
 
@@ -317,7 +413,7 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
       case 'select-class':
         return (
           <>
-            <Button variant="secondary" onClick={onClose}>Annuler</Button>
+            <Button variant="secondary" onClick={requestClose}>Annuler</Button>
             <Button
               onClick={() => setStep('classify')}
               disabled={!sourceClasseId}
@@ -381,34 +477,55 @@ export function ModalTransitionEleves({ open, onClose }: ModalTransitionElevesPr
         )
       case 'execute':
         return null
-      case 'done':
+      case 'done': {
+        // Are we done with EVERY class? Check config.classesTransitioned
+        // against the active classes list. If yes, offer to chain into
+        // archive.
+        const transitionedSet = new Set(config?.classesTransitioned ?? [])
+        const allClassesDone =
+          classes.length > 0 &&
+          classes.every((c) => transitionedSet.has(c.id))
+
         return (
           <>
-            <Button variant="secondary" onClick={onClose}>Fermer</Button>
-            <Button onClick={() => {
-              // Reset and go to step 1 for next class
-              setStep('select-class')
-              setSourceClasseId('')
-              setDecisions({})
-              setDestinations({})
-              setResult(null)
-            }}>
-              Traiter une autre classe
-            </Button>
+            <Button variant="secondary" onClick={requestClose}>Fermer</Button>
+            {allClassesDone && onRequestArchive ? (
+              <Button
+                variant="danger"
+                onClick={() => {
+                  onRequestArchive()
+                }}
+                trailingIcon={<Archive className="h-3.5 w-3.5" />}
+              >
+                Archiver l'année maintenant
+              </Button>
+            ) : (
+              <Button onClick={() => {
+                // Reset and go to step 1 for next class
+                setStep('select-class')
+                setSourceClasseId('')
+                setDecisions({})
+                setDestinations({})
+                setResult(null)
+              }}>
+                Traiter une autre classe
+              </Button>
+            )}
           </>
         )
+      }
     }
   }
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
       size="lg"
       disableOverlayClose={step === 'execute'}
       disableEscClose={step === 'execute'}
     >
-      <ModalHeader onClose={step === 'execute' ? undefined : onClose}>
+      <ModalHeader onClose={step === 'execute' ? undefined : requestClose}>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-warning-bg text-warning">
             <Users className="h-5 w-5" aria-hidden />
@@ -879,9 +996,11 @@ function StepExecute({ progress }: { progress: { done: number; total: number } }
 function StepDone({
   result,
   totalAttempted,
+  allClassesDone,
 }: {
   result: TransitionResult | null
   totalAttempted: number
+  allClassesDone: boolean
 }) {
   const ok = (result?.errors.length ?? 0) === 0
   return (
@@ -912,6 +1031,26 @@ function StepDone({
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {allClassesDone && (
+        <div className="mt-5 rounded-md bg-warning-bg border border-warning/30 p-4 text-left">
+          <div className="flex items-start gap-2">
+            <AlertTriangle
+              className="h-5 w-5 text-warning-dark shrink-0 mt-0.5"
+              aria-hidden
+            />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-warning-dark text-[0.88rem] leading-tight">
+                Toutes les classes ont été traitées.
+              </p>
+              <p className="text-[0.8rem] text-ink-700 mt-1 leading-snug">
+                L'archivage va démarrer automatiquement dans quelques secondes pour finaliser l'année.
+                Vous pouvez cliquer sur « Archiver l'année maintenant » pour enchaîner immédiatement.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>

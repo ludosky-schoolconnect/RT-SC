@@ -8,8 +8,9 @@
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
-    "noEmit": true,
-    "composite": true
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./node_modules/.tmp-tsc-node"
   },
   "include": ["vite.config.ts"]
 }

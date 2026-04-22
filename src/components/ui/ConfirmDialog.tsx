@@ -28,7 +28,14 @@ export function ConfirmDialog() {
   const { open, title, message, confirmLabel, cancelLabel, variant, confirm, cancel } =
     useConfirmStore()
 
-  const v = variant ?? 'info'
+  // Defensive fallback: if a caller passes an invalid variant (e.g.
+  // 'primary' instead of one of the 3 valid values), ICON_FOR[v]
+  // returns undefined and destructuring throws, which shows as a blank
+  // screen. Coerce to 'info' when unrecognized.
+  const v: keyof typeof ICON_FOR =
+    variant && variant in ICON_FOR
+      ? (variant as keyof typeof ICON_FOR)
+      : 'info'
   const { Icon, className } = ICON_FOR[v]
 
   return (

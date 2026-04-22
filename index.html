@@ -2,12 +2,53 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+    <!-- Page identity -->
+    <title>SchoolConnect — Portail Scolaire Numérique</title>
+    <meta name="description" content="SchoolConnect — Portail numérique de gestion scolaire pour les établissements au Bénin. Bulletins, paiements, absences, emplois du temps et communication en un seul endroit." />
     <meta name="theme-color" content="#0B2545" />
-    <meta name="description" content="SchoolConnect — Plateforme de gestion scolaire pour le Bénin" />
+
+    <!-- Google Search Console verification (hub deployment).
+         Harmless on per-school deploys: Search Console verification is
+         scoped to each Firebase Hosting domain, so this token only
+         takes effect on schoolconnect-1adfa.web.app where it was
+         issued. On other domains it's just an inert meta tag. -->
+    <meta name="google-site-verification" content="7JOi2H7A7oSKFv0B99OljHEopXZifuQQwdETYQPCAnU" />
+
+    <!-- Open Graph (link previews on WhatsApp, Facebook, LinkedIn, etc.) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SchoolConnect" />
+    <meta property="og:title" content="SchoolConnect — Portail Scolaire Numérique" />
+    <meta property="og:description" content="Plateforme de gestion scolaire pour les établissements au Bénin. Bulletins, paiements, absences, emplois du temps et communication en un seul endroit." />
+    <meta property="og:image" content="/favicon.svg" />
+    <meta property="og:locale" content="fr_FR" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="SchoolConnect — Portail Scolaire Numérique" />
+    <meta name="twitter:description" content="Plateforme de gestion scolaire pour les établissements au Bénin." />
+    <meta name="twitter:image" content="/favicon.svg" />
+
+    <!-- Icons + favicon -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="mask-icon" href="/favicon.svg" color="#0B2545" />
 
+    <!-- PWA manifest. Per-school deploys overwrite manifest.json with
+         a school-specific name + theme via deploy-school.sh, so the
+         installed home-screen icon shows the right school name. -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Apple-specific PWA tags (so iOS Safari treats it as installable) -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SchoolConnect" />
+
+    <!-- MS tile (rare but cheap) -->
+    <meta name="msapplication-TileColor" content="#0B2545" />
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,9 +56,8 @@
       rel="stylesheet"
     />
 
+    <!-- FedaPay payment SDK -->
     <script src="https://cdn.fedapay.com/checkout.js" defer></script>
-
-    <title>SchoolConnect</title>
   </head>
   <body>
     <div id="root"></div>

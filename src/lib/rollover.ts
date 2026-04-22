@@ -51,6 +51,7 @@ import {
   archiveEmploiDuTempsSeancesCol,
   archiveYearDoc,
   bulletinsCol,
+  civismeHistoryCol,
   classeDoc,
   collesCol,
   ecoleConfigDoc,
@@ -61,6 +62,11 @@ import {
   paiementsCol,
   presencesCol,
   professeursCol,
+  quetesCol,
+  queteClaimsCol,
+  queteDoc,
+  reclamationDoc,
+  reclamationsCol,
   vigilanceCol,
 } from '@/lib/firestore-keys'
 import { genererClassePasskey } from '@/lib/benin'
@@ -168,6 +174,31 @@ export async function executeTransition({
     }
   }
 
+  // Mark this class as transitioned in the school config so the UI can
+  // show a banner until the final archive runs. Non-fatal if this fails
+  // — it's a UX breadcrumb, not a correctness requirement.
+  try {
+    const cfgSnap = await getDoc(docRef(ecoleConfigDoc()))
+    const cfg = (cfgSnap.data() ?? {}) as {
+      classesTransitioned?: string[]
+    }
+    const existing = new Set(cfg.classesTransitioned ?? [])
+    existing.add(sourceClasseId)
+    await setDoc(
+      docRef(ecoleConfigDoc()),
+      {
+        transitionInProgress: true,
+        classesTransitioned: Array.from(existing),
+      },
+      { merge: true }
+    )
+  } catch (e) {
+    console.warn(
+      '[rollover] Could not update transitionInProgress flag:',
+      (e as Error).message
+    )
+  }
+
   return result
 }
 
@@ -219,12 +250,13 @@ async function archiveAndDeleteEleve(
   await setDoc(docRef(archiveEleveDoc(annee, classeId, eleveId)), data)
 
   // 3. Copy each subcollection
-  const subs: { live: string; sub: 'notes' | 'colles' | 'absences' | 'bulletins' | 'paiements' }[] = [
+  const subs: { live: string; sub: 'notes' | 'colles' | 'absences' | 'bulletins' | 'paiements' | 'civismeHistory' }[] = [
     { live: notesCol(classeId, eleveId), sub: 'notes' },
     { live: collesCol(classeId, eleveId), sub: 'colles' },
     { live: absencesCol(classeId, eleveId), sub: 'absences' },
     { live: bulletinsCol(classeId, eleveId), sub: 'bulletins' },
     { live: paiementsCol(classeId, eleveId), sub: 'paiements' },
+    { live: civismeHistoryCol(classeId, eleveId), sub: 'civismeHistory' },
   ]
   for (const { live, sub } of subs) {
     const liveSnap = await getDocs(collection(db, live))
@@ -322,7 +354,14 @@ export async function executeFinalArchive({
         // log a warning — admin may need to manually clear it next year.
         if (eleveData._transfere === true) {
           try {
-            await updateDoc(eDoc.ref, { _transfere: false })
+            // Clear _transfere for the new year, and reset civismePoints
+            // so admis who were carried forward start fresh in their
+            // destination class. Prior history lives on in the archive
+            // under the OLD classeId — parents can still look it up.
+            await updateDoc(eDoc.ref, {
+              _transfere: false,
+              civismePoints: 0,
+            })
           } catch (e) {
             result.errors.push(
               `Flag _transfere non réinitialisé pour ${eleveId} (classe ${classeId}): ${(e as Error).message}`
@@ -334,12 +373,17 @@ export async function executeFinalArchive({
         // Otherwise: archive the élève + each subcollection
         await setDoc(docRef(archiveEleveDoc(annee, classeId, eleveId)), eleveData)
 
-        const subs: { live: string; sub: 'notes' | 'colles' | 'absences' | 'bulletins' | 'paiements' }[] = [
+        const subs: { live: string; sub: 'notes' | 'colles' | 'absences' | 'bulletins' | 'paiements' | 'civismeHistory' }[] = [
           { live: notesCol(classeId, eleveId), sub: 'notes' },
           { live: collesCol(classeId, eleveId), sub: 'colles' },
           { live: absencesCol(classeId, eleveId), sub: 'absences' },
           { live: bulletinsCol(classeId, eleveId), sub: 'bulletins' },
           { live: paiementsCol(classeId, eleveId), sub: 'paiements' },
+          // Civisme history is archived with the élève so parents and
+          // admins can still look up a prior-year record if needed.
+          // Once archived, the live copy is deleted — next year starts
+          // with a clean history.
+          { live: civismeHistoryCol(classeId, eleveId), sub: 'civismeHistory' },
         ]
         for (const { live, sub } of subs) {
           const subSnap = await getDocs(collection(db, live))
@@ -349,8 +393,20 @@ export async function executeFinalArchive({
             await deleteDoc(sd.ref)
           }
         }
-        // NOTE: échoués stay in the class; we DON'T delete them. The cleared
-        // _transfere flag is what marks them as "ready for the new year".
+
+        // Échoués stay in the class for the new year. Reset their
+        // civismePoints to 0 so they don't start the new year with
+        // last year's score. Other year-scoped state lives in the
+        // subcollections that were just wiped above (notes, bulletins,
+        // civismeHistory, etc.). Student identity fields on the eleve
+        // doc (nom, contacts, etc.) are preserved as-is.
+        try {
+          await updateDoc(eDoc.ref, { civismePoints: 0 })
+        } catch (e) {
+          result.errors.push(
+            `Réinitialisation civisme ${eleveId}: ${(e as Error).message}`
+          )
+        }
         result.elevesArchived++
       }
 
@@ -451,6 +507,46 @@ export async function executeFinalArchive({
   }
   onProgress?.('annonces', 1, 1)
 
+  // 3ter. Wipe civisme year-scoped data (quêtes, claims, réclamations).
+  //
+  // Civisme data is inherently year-scoped: quests are published for
+  // this school year's activities, reclamations are current requests,
+  // and the rewards catalog (/recompenses) is persistent and does NOT
+  // need wiping — the same rewards are still valid next year.
+  //
+  // We do NOT archive this data here. It's transient by nature, and
+  // the important long-term record — each élève's civismeHistory —
+  // has already been archived as part of the per-élève subcollection
+  // loop above (Operation B step 1c).
+  //
+  // Order matters: claims live under /quetes/*/claims, so we nuke
+  // claims first (cascade-style) for each quête, then the quête
+  // itself, before moving to réclamations.
+  onProgress?.('civisme', 0, 1)
+  try {
+    // Wipe all quêtes + their claims subcollection
+    const quetesSnap = await getDocs(collection(db, quetesCol()))
+    for (const qDoc of quetesSnap.docs) {
+      const questId = qDoc.id
+      const claimsSnap = await getDocs(
+        collection(db, queteClaimsCol(questId))
+      )
+      for (const cd of claimsSnap.docs) {
+        await deleteDoc(cd.ref)
+      }
+      await deleteDoc(docRef(queteDoc(questId)))
+    }
+
+    // Wipe all reclamations
+    const reclSnap = await getDocs(collection(db, reclamationsCol()))
+    for (const rDoc of reclSnap.docs) {
+      await deleteDoc(docRef(reclamationDoc(rDoc.id)))
+    }
+  } catch (e) {
+    result.errors.push(`Civisme (quêtes + réclamations): ${(e as Error).message}`)
+  }
+  onProgress?.('civisme', 1, 1)
+
   // 3bis. Write the archive year metadata doc. This is what the browse
   // UI queries to list archived years — without it, listing requires
   // `listCollections` which the Firebase JS SDK doesn't expose on the
@@ -467,12 +563,26 @@ export async function executeFinalArchive({
     result.errors.push(`Archive metadata: ${(e as Error).message}`)
   }
 
-  // 4. Bump anneeActive
+  // 4. Bump anneeActive + clear transition tracking + stamp archive record
+  //
+  // The transitionInProgress + classesTransitioned fields were set
+  // during Operation A. Now that the full archive has run, clear them
+  // so the new year starts with no stale warnings.
+  //
+  // lastArchivedAt + lastArchivedAnnee are written so the DangerZone
+  // UI can show a "just archived" success card, making it impossible
+  // for admin to click "Archiver" again immediately in confusion.
   onProgress?.('annee', 0, 1)
   try {
     await setDoc(
       docRef(ecoleConfigDoc()),
-      { anneeActive: newAnnee },
+      {
+        anneeActive: newAnnee,
+        transitionInProgress: false,
+        classesTransitioned: [],
+        lastArchivedAt: serverTimestamp(),
+        lastArchivedAnnee: annee,
+      },
       { merge: true }
     )
   } catch (e) {

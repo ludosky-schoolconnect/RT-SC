@@ -23,12 +23,22 @@ import { Textarea } from '@/ui/Textarea'
 interface Props {
   open: boolean
   onClose: () => void
-  onAdded: () => void
+  /** Called after successful save — receives the saved school so the
+   *  parent can choose the next step (connect, bootstrap, nothing). */
+  onAdded: (school: {
+    id: string
+    name: string
+    config: ReturnType<typeof parseFirebaseConfigBlob>
+  }) => void
+  /** Controls button label + intent. 'add' = just save to list.
+   *  'init' = save + tell parent to bootstrap. */
+  mode?: 'add' | 'init'
 }
 
-export function AddSchoolDialog({ open, onClose, onAdded }: Props) {
+export function AddSchoolDialog({ open, onClose, onAdded, mode = 'add' }: Props) {
   const [name, setName] = useState('')
   const [blob, setBlob] = useState('')
+  const [isHub, setIsHub] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [previewProjectId, setPreviewProjectId] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -38,6 +48,7 @@ export function AddSchoolDialog({ open, onClose, onAdded }: Props) {
     if (open) {
       setName('')
       setBlob('')
+      setIsHub(false)
       setError(null)
       setPreviewProjectId(null)
       // Focus the name input after the dialog animates in
@@ -84,8 +95,9 @@ export function AddSchoolDialog({ open, onClose, onAdded }: Props) {
       name: name.trim(),
       config,
       lastUsed: undefined, // marked used only on first successful connection
+      role: isHub ? 'hub' : 'school',
     })
-    onAdded()
+    onAdded({ id, name: name.trim(), config })
   }
 
   return (
@@ -105,10 +117,14 @@ export function AddSchoolDialog({ open, onClose, onAdded }: Props) {
             </div>
             <div>
               <h2 className="font-display text-lg font-bold text-navy leading-tight">
-                Ajouter une école
+                {mode === 'init'
+                  ? 'Initialiser une nouvelle école'
+                  : 'Ajouter une école existante'}
               </h2>
               <p className="text-[0.75rem] text-ink-400 mt-0.5">
-                La configuration est stockée localement dans ce navigateur.
+                {mode === 'init'
+                  ? "L'étape suivante : remplir le formulaire de configuration de l'école."
+                  : 'La configuration est stockée localement dans ce navigateur.'}
               </p>
             </div>
           </div>
@@ -149,6 +165,30 @@ const firebaseConfig = {
             hint="Firebase Console → Paramètres du projet → Vos applications → Web app → Configuration"
           />
 
+          {/* Hub flag — only shown in 'add' mode. The hub Firebase
+              project holds /school_codes + /cms/about (the common
+              landing page), not a school's data. Flagging it routes
+              to a different Command Center on connect. */}
+          {mode === 'add' && (
+            <label className="flex items-start gap-2.5 cursor-pointer select-none py-1">
+              <input
+                type="checkbox"
+                checked={isHub}
+                onChange={(e) => setIsHub(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-navy"
+              />
+              <div className="flex-1 min-w-0">
+                <span className="text-[0.82rem] text-ink-800 font-semibold">
+                  Il s'agit du hub SchoolConnect
+                </span>
+                <p className="text-[0.72rem] text-ink-500 mt-0.5 leading-snug">
+                  La page école commune — gère les codes école et la
+                  page À propos. Pas une école individuelle.
+                </p>
+              </div>
+            </label>
+          )}
+
           {/* Live validation feedback */}
           {previewProjectId && (
             <div className="flex items-start gap-2 rounded-md border border-success/30 bg-success-bg/60 px-3 py-2.5">
@@ -187,7 +227,7 @@ const firebaseConfig = {
             disabled={!name.trim() || !previewProjectId}
             icon={<Check />}
           >
-            Enregistrer
+            {mode === 'init' ? 'Suivant · Configurer' : 'Enregistrer'}
           </Button>
         </div>
       </div>

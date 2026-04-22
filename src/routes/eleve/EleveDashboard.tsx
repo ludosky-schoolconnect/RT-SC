@@ -12,7 +12,7 @@
  */
 
 import { useSearchParams } from 'react-router-dom'
-import { Home, FileText, CalendarClock, CalendarOff } from 'lucide-react'
+import { Home, FileText, CalendarClock, CalendarOff, Library, Award } from 'lucide-react'
 import { DashboardLayout, type DashboardTab } from '@/components/layout/DashboardLayout'
 import { useAuthStore } from '@/stores/auth'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
@@ -20,6 +20,8 @@ import { AccueilTab } from '@/routes/_shared/AccueilTab'
 import { BulletinsTab } from '@/routes/_shared/bulletins/BulletinsTab'
 import { EmploiClasseTab } from '@/routes/_shared/emploi/EmploiClasseTab'
 import { AbsencesTab } from '@/routes/_shared/absences/AbsencesTab'
+import { AnnalesTab } from '@/routes/_shared/annales/AnnalesTab'
+import { CivismeEleveTab } from './tabs/civisme/CivismeEleveTab'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 const TABS: DashboardTab[] = [
@@ -27,6 +29,8 @@ const TABS: DashboardTab[] = [
   { id: 'bulletins', label: 'Bulletins', icon: <FileText className="h-5 w-5" /> },
   { id: 'emploi', label: 'Emploi', icon: <CalendarClock className="h-5 w-5" /> },
   { id: 'absences', label: 'Absences', icon: <CalendarOff className="h-5 w-5" /> },
+  { id: 'annales', label: 'Annales', icon: <Library className="h-5 w-5" /> },
+  { id: 'civisme', label: 'Civisme', icon: <Award className="h-5 w-5" /> },
 ]
 
 export default function EleveDashboard() {
@@ -97,6 +101,25 @@ export default function EleveDashboard() {
               eleveName={eleveSession.nom}
               declaredByUid={eleveSession.uid}
               mode="eleve"
+            />
+          )
+        }
+        if (activeTab === 'annales') {
+          return (
+            <AnnalesTab
+              mode="eleve"
+              studentClasse={eleveSession.classeNom}
+            />
+          )
+        }
+        if (activeTab === 'civisme') {
+          return (
+            <CivismeEleveTab
+              classeId={eleveSession.classeId}
+              classeNom={eleveSession.classeNom}
+              eleveId={eleveSession.eleveId}
+              eleveName={eleveSession.nom}
+              studentUid={eleveSession.uid}
             />
           )
         }

@@ -52,6 +52,39 @@ export interface EcoleConfig {
   adresse?: string
   /** Main contact phone number. Used on receipts + parent comms. */
   telephone?: string
+  /**
+   * Becomes true the moment the admin kicks off the first class
+   * transition (Operation A). Resets to false after the final archive
+   * (Operation B) completes. While true, the admin dashboard shows a
+   * persistent warning banner prompting them to finalize.
+   *
+   * Introduced to close the hole where admin could complete all class
+   * transitions but forget to run the final archive — leaving the
+   * database in a half-transitioned state.
+   */
+  transitionInProgress?: boolean
+  /**
+   * IDs of classes whose transition (Operation A) has been completed
+   * this cycle. When this set equals the full list of active classes,
+   * the Transition modal's Done step offers to chain into Archive.
+   *
+   * Tracked here (not client-side) so that if admin switches devices
+   * or clears their session, the state survives.
+   */
+  classesTransitioned?: string[]
+  /**
+   * Server timestamp of the most recent successful final-archive run.
+   * Used by the DangerZone UI to show a "just archived" success state
+   * for a short grace window — admin immediately after completing
+   * rollover sees "✓ Année X archivée" rather than a blank DangerZone,
+   * preventing them from clicking "Archiver" again in confusion.
+   */
+  lastArchivedAt?: unknown
+  /**
+   * The année string that was just archived. Paired with
+   * lastArchivedAt to populate the success banner text.
+   */
+  lastArchivedAnnee?: string
 }
 
 export interface PeriodeRange {
@@ -193,8 +226,26 @@ export interface Eleve {
   rang?: string  // e.g. "3ème/45", "1er/45", "1ère ex/45"
   active_session_uid?: string
   active_parent_session_uid?: string
+  /**
+   * Civisme score (comportement/soft-skills) on a 0-20 scale.
+   * Admin adjusts by ±1 from the Civisme tab. Undefined = 0.
+   * Eleves with ≥ 18 become eligible for the PDF honor certificate.
+   */
+  civismePoints?: number
   /** Set true during rollover to mark "do not archive again" */
   _transfere?: boolean
+  /**
+   * English Hub — current streak count (consecutive days of correct
+   * daily-quiz answers). Resets to 0 on a wrong answer or if the
+   * student skips a day.
+   */
+  englishStreak?: number
+  /**
+   * English Hub — ISO date string ("YYYY-MM-DD") of the last day
+   * the student answered the daily quiz. Used to gate repeat
+   * answering and to detect streak breaks.
+   */
+  lastEnglishQuiz?: string
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -453,16 +504,32 @@ export interface AnnuaireParent {
 
 // ─────────────────────────────────────────────────────────────
 // /annales/{auto}
+//
+// Past exam papers (BEPC blanc, devoirs, etc.) stored as Google
+// Drive shareable links. Admins and profs add them; élèves
+// consume them from their dashboard.
+//
+// The `classe` field is free text ("3ème M1" or "3ème") — student
+// view matches on either exact-class or level-prefix so an annale
+// tagged "3ème" shows up for all 3ème students across sections.
 // ─────────────────────────────────────────────────────────────
 
 export interface Annale {
   id: string
   titre: string
   matiere: string
-  classe: string  // free text, e.g. "3ème M1"
-  lien: string    // Google Drive URL
-  corrige?: string  // Google Drive URL for solution
+  /** Free text: "3ème M1" or "3ème" or "Terminale D" */
+  classe: string
+  /** Google Drive URL for the subject paper */
+  lien: string
+  /** Google Drive URL for the corrigé (optional) */
+  corrige?: string
+  /** Display name of who uploaded */
   ajoutePar: string
+  /** UID of uploader (for own-edit/delete permission check) */
+  ajouteParUid?: string
+  /** Role of uploader — affects UI badge */
+  ajouteParRole?: 'admin' | 'prof'
   dateAjout: Timestamp
 }
 
@@ -662,4 +729,206 @@ export interface ArchivedYear {
   elevesCount: number
   errorsCount: number
   archivedAt: Timestamp
+}
+
+// ─────────────────────────────────────────────────────────────
+// /recompenses/{id}
+// School-wide rewards catalog. Admin defines what students can
+// claim with their cumulative civisme points. Phase 1 (this turn)
+// only ships the admin CRUD. Student claims & redemptions ship
+// in Phase 3.
+// ─────────────────────────────────────────────────────────────
+
+export interface Recompense {
+  id: string
+  /** Display name, e.g. "Calculatrice scientifique" */
+  nom: string
+  /** Free-text description shown to students browsing the catalog */
+  description?: string
+  /** Cost in civisme points to claim this reward */
+  pointsRequis: number
+  /**
+   * Manual availability toggle. Admin sets to false when stock runs
+   * out — no automatic counting, just a visibility flag. We deliberately
+   * avoid stock counters because real-world inventory drifts and
+   * counter mismatches would create more friction than they solve.
+   */
+  disponible: boolean
+  createdAt: Timestamp
+  /** Admin uid that created this reward */
+  createdBy: string
+  /** Last update — used for sort-by-recent in the catalog list */
+  updatedAt?: Timestamp
+}
+
+// ─────────────────────────────────────────────────────────────
+// /quetes/{id}  — Civisme v3 quests (Phase 2)
+//
+// A quest is a posted opportunity to earn civisme points by doing
+// a task the school needs done (cleaning, helping, organizing).
+// Each quest has N slots; one student per slot. Claims are stored
+// in a subcollection so we can support multi-slot cleanly without
+// bloating the parent doc.
+// ─────────────────────────────────────────────────────────────
+
+export type QueteStatut =
+  | 'ouverte'    // accepting claims (slotsRemaining > 0)
+  | 'complete'   // all slots taken, awaiting validations
+  | 'cloturee'   // admin closed it (no further claims, even if validations remain)
+  | 'annulee'    // admin cancelled — open claims should be marked rejected
+
+export interface Quete {
+  id: string
+  titre: string
+  description?: string
+  /** Points each successful claim awards */
+  pointsRecompense: number
+  /**
+   * Total slots when posted. Stays constant after creation; admin
+   * cannot reduce it below the number of taken slots.
+   */
+  slotsTotal: number
+  /** Count of claims with statut in ('pending', 'validated') */
+  slotsTaken: number
+  /** Count of claims with statut === 'validated' (subset of slotsTaken) */
+  slotsValidated: number
+  /**
+   * Optional class filter. When null/undefined, quest is visible to
+   * all classes. When set, only students from that class can claim.
+   */
+  classeIdFilter?: string
+  /** Display label for the class (denormalized at create time) */
+  classeNomFilter?: string
+  /** Optional deadline — purely advisory; not enforced server-side */
+  echeance?: Timestamp
+  statut: QueteStatut
+  createdAt: Timestamp
+  createdBy: string
+  /** Last update timestamp — used to surface "récemment publiée" hints */
+  updatedAt?: Timestamp
+}
+
+// ─────────────────────────────────────────────────────────────
+// /quetes/{questId}/claims/{claimId}  — per-slot claim
+// ─────────────────────────────────────────────────────────────
+
+export type ClaimStatut =
+  | 'pending'    // claimed, awaiting admin validation
+  | 'validated'  // admin approved, points awarded
+  | 'rejected'   // admin rejected, no points awarded
+
+export interface QueteClaim {
+  id: string
+  /** Backlink — useful for collection-group queries */
+  queteId: string
+  /** Denormalized quest snapshot at claim time */
+  queteTitre: string
+  pointsRecompense: number
+  // Who's doing the work
+  eleveId: string
+  eleveNom: string         // denormalized for ticket + admin list display
+  classeId: string
+  classeNom: string        // denormalized
+  // How the claim was made
+  claimedBy: 'eleve' | 'prof' | 'admin'
+  /** UID of the actor (student themselves, or prof/admin acting on behalf) */
+  claimedByUid: string
+  claimedByNom?: string    // denormalized when prof/admin
+  claimedAt: Timestamp
+  // Validation
+  statut: ClaimStatut
+  validatedAt?: Timestamp
+  validatedByUid?: string
+  validatedByNom?: string
+  rejectionReason?: string
+  // Ticket — short readable code that admin can verify
+  ticketCode: string       // e.g. "T-K7XQN3"
+}
+
+// ─────────────────────────────────────────────────────────────
+// /reclamations/{id}  — reward claims (Phase 3)
+//
+// A student wants a reward from the catalog. They (or a prof/admin
+// on their behalf) create a Reclamation doc. Admin then fulfills it
+// (physical handover) or rejects it. Points are debited at
+// fulfillment time, not request time — this way cancellations
+// don't need refund logic.
+//
+// Why "reclamation" and not "redemption"? User preference — French-
+// natural term that matches the school context. The code throughout
+// refers to it as Reclamation for consistency.
+// ─────────────────────────────────────────────────────────────
+
+export type ReclamationStatut =
+  | 'demandee'    // pending admin fulfillment
+  | 'fulfillee'   // admin handed over the reward, points debited
+  | 'annulee'     // admin or student cancelled before fulfillment
+
+export interface Reclamation {
+  id: string
+  // Target
+  eleveId: string
+  eleveNom: string         // denormalized
+  classeId: string
+  classeNom: string        // denormalized
+  // What they want
+  recompenseId: string
+  recompenseNom: string    // denormalized at request time (catalog could change)
+  pointsCout: number       // snapshot of cost at request time
+  // Who requested
+  demandeeParType: 'eleve' | 'prof' | 'admin'
+  demandeeParUid: string
+  demandeeParNom?: string  // denormalized for prof/admin
+  demandeeLe: Timestamp
+  // Status + audit
+  statut: ReclamationStatut
+  fulfilleeLe?: Timestamp
+  fulfilleeParUid?: string
+  fulfilleeParNom?: string
+  annuleeLe?: Timestamp
+  annuleeParUid?: string
+  annuleeParNom?: string
+  annulationReason?: string
+  /** Ticket code — same format as quest tickets, prefix 'R' instead of 'T' */
+  ticketCode: string
+}
+
+// ─────────────────────────────────────────────────────────────
+// /classes/{cid}/eleves/{eid}/civismeHistory/{id}  — audit trail
+//
+// Every point change leaves a footprint here. Required for:
+//   - Student/parent transparency ("why did my solde change?")
+//   - Admin audit if a dispute comes up
+//   - The "Historique" section on the student civisme tab
+//
+// Writes happen in the same transaction that updates civismePoints,
+// so the balance + history are always consistent.
+// ─────────────────────────────────────────────────────────────
+
+export type CivismeHistoryRaison =
+  | 'quete'              // quest validation awarded points
+  | 'reclamation'        // reward claim fulfilled, points debited
+  | 'incident'           // incident report deducted points
+  | 'ajustement_manuel'  // admin ±1 or manual tweak
+
+export interface CivismeHistoryEntry {
+  id: string
+  /** Delta applied — can be positive (quete) or negative (incident, reclamation) */
+  delta: number
+  raison: CivismeHistoryRaison
+  /** Required for incidents, optional for other reasons */
+  motif?: string
+  /** Backlink to the source doc for drilldown */
+  reference?: {
+    type: 'quete' | 'reclamation'
+    id: string
+    /** Denormalized label (e.g. quest title or reward name) */
+    label: string
+  }
+  date: Timestamp
+  /** Who triggered this change — admin uid, prof uid, or 'system' */
+  parUid: string
+  parNom?: string
+  /** Snapshot of the balance AFTER this change — for display */
+  soldeApres: number
 }

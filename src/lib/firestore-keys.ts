@@ -238,3 +238,37 @@ export function parseLiveElevePath(
   }
   return { classeId, eleveId }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Civisme — Recompenses catalog (Phase 1)
+// ─────────────────────────────────────────────────────────────
+
+export const recompensesCol = () => 'recompenses'
+export const recompenseDoc = (id: string) => `recompenses/${id}`
+
+// ─────────────────────────────────────────────────────────────
+// Civisme — Quêtes (Phase 2)
+// ─────────────────────────────────────────────────────────────
+
+export const quetesCol = () => 'quetes'
+export const queteDoc = (questId: string) => `quetes/${questId}`
+export const queteClaimsCol = (questId: string) =>
+  `quetes/${questId}/claims`
+export const queteClaimDoc = (questId: string, claimId: string) =>
+  `quetes/${questId}/claims/${claimId}`
+
+// ─────────────────────────────────────────────────────────────
+// Civisme — Réclamations de récompenses (Phase 3)
+// ─────────────────────────────────────────────────────────────
+
+export const reclamationsCol = () => 'reclamations'
+export const reclamationDoc = (id: string) => `reclamations/${id}`
+
+// ─────────────────────────────────────────────────────────────
+// Civisme — History subcollection on each eleve (Phase 3)
+// ─────────────────────────────────────────────────────────────
+
+export const civismeHistoryCol = (classeId: string, eleveId: string) =>
+  `classes/${classeId}/eleves/${eleveId}/civismeHistory`
+export const civismeHistoryDoc = (classeId: string, eleveId: string, id: string) =>
+  `classes/${classeId}/eleves/${eleveId}/civismeHistory/${id}`

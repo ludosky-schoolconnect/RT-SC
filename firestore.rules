@@ -1,41 +1,339 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /ecole/subscription { allow read: if true; allow write: if request.auth != null && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin'; }
-    match /annuaire_parents/{document=**} { allow read: if true; allow create: if true; allow update, delete: if request.auth != null; }
-    match /classes/{classeId}/eleves/{eleveId}/absences/{absenceId} { allow read: if true; allow create: if true; allow update, delete: if request.auth != null; }
-    match /ecole/{document=**} { allow read: if true; allow write: if request.auth != null; }
-    match /settings_inscription/{document=**} { allow read: if true; allow write: if request.auth != null; }
-    match /classes/{classeId}/eleves/{eleveId} { allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['englishStreak', 'lastEnglishQuiz']); }
-    match /classes/{classeId}/eleves/{eleveId}/paiements/{paiementId} { allow read: if true; }
-    match /classes/{document=**} { allow read: if true; allow write: if request.auth != null; }
-    match /annonces/{document=**} { allow read: if true; allow write: if request.auth != null; }
-    match /annonces_globales/{document=**} { allow read: if true; allow write: if request.auth != null; }
-    match /school_codes/{document=**} { allow read: if true; allow write: if request.auth != null; }
-    match /system/{document=**} { allow read: if true; allow write: if request.auth != null; }
-    match /emploisDuTemps/{document=**} { allow read: if true; allow write: if request.auth != null; }
-    match /annales/{document=**} { allow read: if true; allow write: if request.auth != null; }
 
-    // ─── CMS pages (currently just /a-propos via cms/about) ───────────
-    // Public read so visitors see published content.
-    // Write restricted to the project owner — replace OWNER_UID below
-    // with the same UID used for VITE_OWNER_UID in .env.local.
-    // (Until you replace it, no one can write — safe default.)
-    match /cms/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == "OWNER_UID";
+    // ══════════════════════════════════════════════════════════
+    // 🔐 SECURITY FUNCTIONS
+    // ══════════════════════════════════════════════════════════
+
+    function isStaff() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
-    
-    match /{path=**}/eleves/{eleveId} { allow read: if true; }
-    match /pre_inscriptions/{document=**} { allow read, create: if true; allow update, delete: if request.auth != null; }
 
-    match /professeurs/{userId} {
-      allow create: if request.auth != null && request.auth.uid == userId && request.resource.data.statut == 'en_attente';
-      allow update, delete: if request.auth != null && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin';
+    function isAdmin() {
+      return isStaff()
+        && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isSaaSMaster() {
+      return request.auth != null
+        && request.auth.token.email == 'ludoskyazon@gmail.com';
+    }
+
+    function isStudentOf(classeId, eleveId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/classes/$(classeId)/eleves/$(eleveId)).data.active_session_uid == request.auth.uid;
+    }
+
+    function isParentOf(classeId, eleveId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/classes/$(classeId)/eleves/$(eleveId)).data.active_parent_session_uid == request.auth.uid;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 🔍 COLLECTION GROUP READS
+    // ══════════════════════════════════════════════════════════
+
+    match /{path=**}/eleves/{eleveId} {
+      allow read: if true;
+    }
+
+    match /{path=**}/notes/{noteId}         { allow read: if isStaff(); }
+    match /{path=**}/bulletins/{bulletinId} { allow read: if isStaff(); }
+    match /{path=**}/absences/{absenceId}   { allow read: if isStaff(); }
+    match /{path=**}/paiements/{paiementId} { allow read: if isStaff(); }
+
+    // Civisme v3 — collection-group read for /quetes/{q}/claims/{c}.
+    match /{path=**}/claims/{claimId} {
       allow read: if request.auth != null;
     }
-    match /{document=**} {
-      allow read, write: if request.auth != null && exists(/databases/$(database)/documents/professeurs/$(request.auth.uid)) && (get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin' || (get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'prof' && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.statut == 'actif'));
+
+    // Civisme v3 (Phase 3) — collection-group read for civisme
+    // history (used by parent widget, student historique, admin audit).
+    match /{path=**}/civismeHistory/{entryId} {
+      allow read: if request.auth != null;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 🏫 SCHOOL CONFIG & GLOBAL SETTINGS
+    // ══════════════════════════════════════════════════════════
+
+    match /ecole/subscription {
+      allow read: if true;
+      allow write: if isAdmin() || isSaaSMaster();
+    }
+    match /ecole/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin() || isSaaSMaster();
+    }
+    match /system/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin() || isSaaSMaster();
+    }
+
+    match /settings_inscription/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin() || isSaaSMaster();
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 📝 PRE-INSCRIPTIONS
+    // ══════════════════════════════════════════════════════════
+
+    match /pre_inscriptions/{piId} {
+      allow create: if true;
+      allow read: if true;
+
+      allow update: if isStaff() || (
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['dateRV', 'reprogCount']) &&
+        resource.data.statut == 'Approuvé' &&
+        request.resource.data.reprogCount == resource.data.reprogCount + 1
+      );
+
+      allow delete: if isStaff();
+
+      match /documents/{docId} {
+        allow create: if true;
+        allow read, write: if isStaff();
+      }
+    }
+
+    match /rv_counters/{document=**} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 🗂️ ARCHIVES
+    // ══════════════════════════════════════════════════════════
+
+    match /archived_absences/{id} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isStaff();
+    }
+
+    match /archive/{annee} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isStaff();
+
+      match /{path=**} {
+        allow read: if isStaff();
+        allow write: if isStaff();
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 🏫 SCHOOL-WIDE COLLECTIONS
+    // ══════════════════════════════════════════════════════════
+
+    match /classes/{document=**} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    match /annonces/{document=**} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    match /annonces_globales/{document=**} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    match /school_codes/{document=**} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    match /emploisDuTemps/{document=**} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    match /seances/{document=**} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    match /annales/{document=**} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    match /vigilance_ia/{document=**} {
+      allow read, write: if isStaff();
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 🏆 CIVISME v3 — catalog + quetes + reclamations
+    // ══════════════════════════════════════════════════════════
+
+    // Récompenses catalog (Phase 1)
+    match /recompenses/{recompenseId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin() || isSaaSMaster();
+    }
+
+    // Quêtes (Phase 2)
+    match /quetes/{questId} {
+      allow read: if request.auth != null;
+      allow create, delete: if isAdmin() || isSaaSMaster();
+
+      allow update: if (isAdmin() || isSaaSMaster()) || (
+        request.auth != null &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['slotsTaken', 'slotsValidated', 'statut', 'updatedAt']) &&
+        request.resource.data.slotsTaken >= resource.data.slotsTaken &&
+        request.resource.data.slotsValidated >= resource.data.slotsValidated
+      );
+
+      match /claims/{claimId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow update: if isAdmin() || isSaaSMaster();
+        allow delete: if isAdmin() || isSaaSMaster();
+      }
+    }
+
+    // Réclamations de récompenses (Phase 3)
+    //   - read: anyone signed in (PII exposure is no higher than
+    //     the eleves collection-group which is already public)
+    //   - create: anyone signed in (student/prof/admin; affordability
+    //     enforced client-side + by fulfillment transaction which
+    //     re-checks balance before debiting)
+    //   - update/delete: admin only (fulfill + cancel workflows)
+    match /reclamations/{reclamationId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if isAdmin() || isSaaSMaster();
+    }
+
+    // Parent directory — two-chair lock
+    match /annuaire_parents/{docId} {
+      allow read: if request.auth != null;
+
+      allow create, update: if request.auth != null
+        && request.resource.data.eleveId != null
+        && (docId == request.resource.data.eleveId + '_parent1'
+            || docId == request.resource.data.eleveId + '_parent2');
+
+      // Parents can delete their own slot (same doc-id constraint as
+      // create/update). Staff can delete any entry for moderation.
+      allow delete: if isStaff() || (
+        request.auth != null
+        && resource.data.eleveId != null
+        && (docId == resource.data.eleveId + '_parent1'
+            || docId == resource.data.eleveId + '_parent2')
+      );
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 👨‍🎓 STUDENT & PARENT PROFILES
+    // ══════════════════════════════════════════════════════════
+
+    match /classes/{classeId}/eleves/{eleveId} {
+      allow read: if true;
+
+      allow update: if (
+        request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active_session_uid'])
+        && request.resource.data.active_session_uid == request.auth.uid
+      ) || (
+        request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active_parent_session_uid'])
+        && request.resource.data.active_parent_session_uid == request.auth.uid
+      ) || (
+        request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['englishStreak', 'lastEnglishQuiz'])
+      ) || (
+        // Civisme v3 — civismePoints mutations. Staff (admin + prof)
+        // can update it within the same transactions that write
+        // civismeHistory entries: quest validation, reclamation
+        // fulfillment, incident reports, manual ±1 adjustments.
+        isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['civismePoints'])
+      );
+
+      allow write: if isStaff();
+
+      match /absences/{document=**} {
+        allow read: if isStudentOf(classeId, eleveId)
+                    || isParentOf(classeId, eleveId)
+                    || isStaff();
+
+        allow create: if isStaff()
+                      || isStudentOf(classeId, eleveId)
+                      || isParentOf(classeId, eleveId);
+
+        allow update, delete: if isStaff();
+      }
+
+      match /paiements/{document=**} {
+        allow read: if isStudentOf(classeId, eleveId)
+                    || isParentOf(classeId, eleveId)
+                    || isStaff();
+        allow write: if isStaff();
+      }
+
+      match /notes/{document=**} {
+        allow read: if isStudentOf(classeId, eleveId)
+                    || isParentOf(classeId, eleveId)
+                    || isStaff();
+        allow write: if isStaff();
+      }
+
+      match /bulletins/{document=**} {
+        allow read: if isStudentOf(classeId, eleveId)
+                    || isParentOf(classeId, eleveId)
+                    || isStaff();
+        allow write: if isStaff();
+      }
+
+      match /colles/{document=**} {
+        allow read: if isStudentOf(classeId, eleveId)
+                    || isParentOf(classeId, eleveId)
+                    || isStaff();
+        allow write: if isStaff();
+      }
+
+      // Civisme history — Phase 3
+      // Written during transactions that mutate civismePoints: quest
+      // validation (admin), reclamation fulfillment (admin), and
+      // incident reports (admin or prof). Read by the student, their
+      // parents, and any staff.
+      //
+      // Writes permitted to any staff — profs need this to report
+      // incidents for students in their classes. Abuse is deterred
+      // by the audit trail: every entry is stamped with parUid and
+      // parNom, and history is read-visible to students + parents,
+      // so anomalous entries surface quickly.
+      match /civismeHistory/{entryId} {
+        allow read: if isStudentOf(classeId, eleveId)
+                    || isParentOf(classeId, eleveId)
+                    || isStaff();
+        allow create, update, delete: if isStaff();
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 📰 CMS (À propos, UID-gated)
+    // ══════════════════════════════════════════════════════════
+
+    match /cms/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.auth.uid == "ARCosTxTeZYvk9cj548mnRzaYKG2";
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // 👨‍🏫 TEACHERS & ADMINS
+    // ══════════════════════════════════════════════════════════
+
+    match /professeurs/{userId} {
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.statut == 'en_attente';
+
+      allow update, delete: if isAdmin() || isSaaSMaster();
+      allow read: if request.auth != null;
     }
   }
 }

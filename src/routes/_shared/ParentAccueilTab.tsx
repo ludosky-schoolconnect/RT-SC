@@ -21,17 +21,17 @@
  */
 
 import { motion } from 'framer-motion'
-import {
-  Wallet, Briefcase,
-  HeartHandshake,
-} from 'lucide-react'
+import { HeartHandshake } from 'lucide-react'
 
 import { HeuresColleWidget } from '@/routes/_shared/colles/HeuresColleWidget'
 import { AnnoncesWidget } from '@/routes/_shared/annonces/AnnoncesWidget'
 import { CoursDuJourWidget } from '@/routes/_shared/emploi/CoursDuJourWidget'
+import { PaiementWidget } from '@/routes/_shared/PaiementWidget'
+import { CivismeParentWidget } from '@/routes/_shared/civisme/CivismeParentWidget'
+import { BilanAnnuelWidget } from '@/routes/_shared/BilanAnnuelWidget'
+import { AnnuaireParentWidget } from '@/routes/_shared/annuaire/AnnuaireParentWidget'
+import { VisioParentWidget } from '@/routes/_shared/visio/VisioParentWidget'
 import { useGreeting } from '@/hooks/useGreeting'
-
-import { PreviewWidget } from './accueilPrimitives'
 
 interface ParentAccueilTabProps {
   classeId: string
@@ -40,6 +40,7 @@ interface ParentAccueilTabProps {
   eleveName: string
   anneeScolaire?: string
   onNavigateToEmploi?: () => void
+  onNavigateToPaiement?: () => void
 }
 
 export function ParentAccueilTab({
@@ -49,6 +50,7 @@ export function ParentAccueilTab({
   eleveName,
   anneeScolaire,
   onNavigateToEmploi,
+  onNavigateToPaiement,
 }: ParentAccueilTabProps) {
   const { greeting } = useGreeting()
 
@@ -92,6 +94,14 @@ export function ParentAccueilTab({
           </p>
         </motion.header>
 
+        {/* Bilan annuel — only renders once the PP closes the year.
+            Top of the page so the parent sees the final verdict first. */}
+        <BilanAnnuelWidget
+          classeId={classeId}
+          eleveId={eleveId}
+          eleveName={eleveName}
+        />
+
         {/* ─── Suivi scolaire (live) ─── */}
         <section className="pt-2 space-y-3">
           <p className="text-[0.7rem] uppercase tracking-[0.2em] text-ink-500 font-bold px-1">
@@ -110,24 +120,24 @@ export function ParentAccueilTab({
             Vie de l'école
           </p>
           <AnnoncesWidget classeIds={[classeId]} />
-          <PreviewWidget
-            icon={<Wallet className="h-5 w-5" />}
-            iconTone="success"
-            label="Paiement de scolarité"
-            description="État des versements et reçus"
+          <PaiementWidget
+            classeId={classeId}
+            eleveId={eleveId}
+            onOpen={onNavigateToPaiement}
           />
+          <CivismeParentWidget classeId={classeId} eleveId={eleveId} />
+          <VisioParentWidget eleveId={eleveId} eleveName={eleveName} />
         </section>
 
-        {/* ─── Communauté (preview) ─── */}
+        {/* ─── Communauté ─── */}
         <section className="pt-2 space-y-3">
           <p className="text-[0.7rem] uppercase tracking-[0.2em] text-ink-500 font-bold px-1">
             Communauté
           </p>
-          <PreviewWidget
-            icon={<Briefcase className="h-5 w-5" />}
-            iconTone="gold"
-            label="Annuaire des parents"
-            description="Réseau professionnel entre parents de l'école"
+          <AnnuaireParentWidget
+            eleveId={eleveId}
+            classeId={classeId}
+            eleveName={eleveName}
           />
         </section>
       </div>

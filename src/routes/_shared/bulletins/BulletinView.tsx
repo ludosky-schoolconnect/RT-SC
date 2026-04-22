@@ -20,6 +20,7 @@ import type {
   BulletinAnnualView,
   BulletinPeriodView,
 } from '@/lib/bulletinView'
+import { statutLabel } from '@/lib/statutLabel'
 import { cn } from '@/lib/cn'
 
 interface BulletinViewProps {
@@ -382,7 +383,13 @@ function AnnualBody({ view }: { view: BulletinAnnualView }) {
         >
           <Award className="h-5 w-5" aria-hidden />
           <p className="font-bold text-base uppercase tracking-wider">
-            {view.statutAnnuel} en classe supérieure
+            {statutLabel(
+              view.statutAnnuel,
+              view.eleve.genre === 'M' || view.eleve.genre === 'F'
+                ? view.eleve.genre
+                : null
+            )}{' '}
+            en classe supérieure
           </p>
         </div>
       </div>

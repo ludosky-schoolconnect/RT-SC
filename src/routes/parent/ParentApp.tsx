@@ -17,7 +17,7 @@
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom'
 import {
   Home, FileText, CalendarClock, CalendarOff, MoreHorizontal, UserPlus, LogOut, Users, Check,
-  ChevronRight,
+  ChevronRight, Wallet,
 } from 'lucide-react'
 import { DashboardLayout, type DashboardTab } from '@/components/layout/DashboardLayout'
 import { useAuthStore } from '@/stores/auth'
@@ -28,6 +28,7 @@ import { ParentAccueilTab } from '@/routes/_shared/ParentAccueilTab'
 import { BulletinsTab } from '@/routes/_shared/bulletins/BulletinsTab'
 import { EmploiClasseTab } from '@/routes/_shared/emploi/EmploiClasseTab'
 import { AbsencesTab } from '@/routes/_shared/absences/AbsencesTab'
+import { ParentPaiementTab } from './tabs/paiement/ParentPaiementTab'
 import { Section, SectionHeader } from '@/components/layout/Section'
 import { cn } from '@/lib/cn'
 
@@ -36,6 +37,7 @@ const TABS: DashboardTab[] = [
   { id: 'bulletins', label: 'Bulletins', icon: <FileText className="h-5 w-5" /> },
   { id: 'emploi', label: 'Emploi', icon: <CalendarClock className="h-5 w-5" /> },
   { id: 'absences', label: 'Absences', icon: <CalendarOff className="h-5 w-5" /> },
+  { id: 'paiement', label: 'Paiement', icon: <Wallet className="h-5 w-5" /> },
   { id: 'plus', label: 'Plus', icon: <MoreHorizontal className="h-5 w-5" /> },
 ]
 
@@ -148,6 +150,7 @@ export default function ParentApp() {
                 eleveName={activeChild.nom}
                 anneeScolaire={ecoleConfig?.anneeActive}
                 onNavigateToEmploi={() => navigateToTab('emploi')}
+                onNavigateToPaiement={() => navigateToTab('paiement')}
               />
             </>
           )
@@ -206,6 +209,24 @@ export default function ParentApp() {
                 eleveName={activeChild.nom}
                 declaredByUid={parentSession.uid}
                 mode="parent"
+              />
+            </>
+          )
+        }
+        if (activeTab === 'paiement') {
+          return (
+            <>
+              {parentSession.children.length > 1 && (
+                <ChildSwitcherStrip
+                  children={parentSession.children}
+                  activeIndex={activeIndex}
+                  onSwitch={switchToChild}
+                />
+              )}
+              <ParentPaiementTab
+                classeId={activeChild.classeId}
+                eleveId={activeChild.eleveId}
+                eleveName={activeChild.nom}
               />
             </>
           )
