@@ -64,11 +64,34 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(false)
   const [autoChecking, setAutoChecking] = useState(true)
 
-  // Skip directly to /welcome if we already have a saved school code
+  // Skip directly to /welcome if:
+  //   (a) this deployment is a SCHOOL (has /ecole/config) — this is
+  //       the target deployment, not the hub. The code-entry page
+  //       has no meaning here.
+  //   (b) user already entered a code (stored in localStorage)
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) navigate('/welcome', { replace: true })
-    else setAutoChecking(false)
+    let cancelled = false
+    ;(async () => {
+      try {
+        // Probe /ecole/config. If it exists, this is a school — skip
+        // the landing gate entirely.
+        const ecoleConfig = await getDoc(docRef('ecole/config'))
+        if (cancelled) return
+        if (ecoleConfig.exists()) {
+          navigate('/welcome', { replace: true })
+          return
+        }
+      } catch {
+        // Firestore unreachable or rules reject read — fall through
+        // to normal code-entry flow (hub landing).
+      }
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) navigate('/welcome', { replace: true })
+      else setAutoChecking(false)
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [navigate])
 
   async function submit(e: React.FormEvent) {

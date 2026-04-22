@@ -431,20 +431,32 @@ function SchoolCodesSection({ db }: { db: Firestore }) {
     setSaving(true)
     setError(null)
     try {
-      // If editing and the code changed, delete the old doc first
-      // (Firestore doc IDs are immutable, so a code rename = delete + recreate)
+      // Build the doc payload. Firestore rejects `undefined` values, so we
+      // build the object conditionally — `schoolName` is included only
+      // when set, otherwise omitted entirely. (When merge:true, missing
+      // keys leave the existing value untouched on update.)
+      const payload: Record<string, unknown> = {
+        url: cleanUrl,
+        updatedAt: serverTimestamp(),
+      }
+      const trimmedName = schoolName.trim()
+      if (trimmedName) {
+        payload.schoolName = trimmedName
+      }
+
+      // Order matters: write the NEW doc first, then delete the old one.
+      // If the write fails (permissions, validation, network), we don't
+      // want the old doc gone too — that would silently delete the entry.
+      await setDoc(doc(db, 'school_codes', cleanCode), payload, {
+        merge: true,
+      })
+
+      // Code rename: doc IDs are immutable, so renaming = create new +
+      // delete old. Only runs if write above succeeded.
       if (editingId && editingId !== cleanCode) {
         await deleteDoc(doc(db, 'school_codes', editingId))
       }
-      await setDoc(
-        doc(db, 'school_codes', cleanCode),
-        {
-          url: cleanUrl,
-          schoolName: schoolName.trim() || undefined,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      )
+
       resetForm()
       await load()
     } catch (err) {

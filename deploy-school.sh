@@ -123,6 +123,22 @@ fi
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
   echo "Error: file not found: $CONFIG_FILE" >&2
+  echo "" >&2
+  echo "You need a config file at that path. Two ways to create it:" >&2
+  echo "" >&2
+  echo "  1. Via script (creates Firebase project + config file):" >&2
+  echo "     ./create-school-project.sh <project-id> \"<Display Name>\"" >&2
+  echo "" >&2
+  echo "  2. Manually, if the Firebase project already exists:" >&2
+  echo "     mkdir -p schools" >&2
+  echo "     nano $CONFIG_FILE    # paste the wrapper JSON:" >&2
+  echo "     {" >&2
+  echo "       \"name\": \"Display Name\"," >&2
+  echo "       \"config\": { \"apiKey\": \"...\", \"projectId\": \"...\", ... }" >&2
+  echo "     }" >&2
+  echo "" >&2
+  echo "  The config block comes from Firebase Console → Project Settings →" >&2
+  echo "  Your apps → Web app → SDK setup and configuration → Config." >&2
   exit 1
 fi
 
