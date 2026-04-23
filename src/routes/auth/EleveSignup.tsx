@@ -22,7 +22,8 @@ import {
   getDoc,
   doc as fsDoc,
 } from 'firebase/firestore'
-import { db } from '@/firebase'
+import { httpsCallable, type FunctionsError } from 'firebase/functions'
+import { db, functions } from '@/firebase'
 import { nomClasse } from '@/lib/benin'
 import type { Classe, Eleve, Genre } from '@/types/models'
 import { AuthLayout } from '@/components/layout/AuthLayout'
@@ -33,6 +34,32 @@ import { Button } from '@/components/ui/Button'
 interface VerifyResult {
   passkey: string
   classeNom: string
+}
+
+/**
+ * Session E2 — findEleveIdentity callable shape.
+ * Returns { match: { eleveId, classeId } | null }
+ */
+interface FindInput {
+  mode: 'byIdentity'
+  nom: string
+  genre: 'M' | 'F'
+  dateNaissance: string
+}
+interface FindOutput {
+  match: { eleveId: string; classeId: string } | null
+}
+
+/** Error codes from the callable that signify "Blaze not active yet — fall back". */
+function isFallbackCode(code: string | undefined): boolean {
+  return (
+    code === 'functions/not-found' ||
+    code === 'functions/unavailable' ||
+    code === 'functions/internal' ||
+    code === 'not-found' ||
+    code === 'unavailable' ||
+    code === 'internal'
+  )
 }
 
 export default function EleveSignup() {
@@ -58,28 +85,66 @@ export default function EleveSignup() {
 
     setSubmitting(true)
     try {
-      // Single collectionGroup query is far cheaper than looping every class.
-      // Requires the composite index defined in firestore.indexes.json.
-      const q = query(
-        collectionGroup(db, 'eleves'),
-        where('nom', '==', cleanNom),
-        where('genre', '==', genre),
-        where('date_naissance', '==', dateNaissance)
-      )
-      const snap = await getDocs(q)
+      // Session E2 — server-side lookup first, legacy scan as fallback.
+      //
+      // Post-Blaze, findEleveIdentity does the collectionGroup query
+      // via admin SDK (bypasses rules). Pre-Blaze, the callable is not
+      // deployed and we catch the error to fall back to the legacy
+      // client-side query. Behavior pre-Blaze is identical to before
+      // Session E2.
+      let classeId: string | null = null
 
-      if (snap.empty) {
-        setError(
-          "Identité introuvable. Vérifiez l'orthographe exacte de votre nom et que l'école a bien créé votre profil."
+      try {
+        const call = httpsCallable<FindInput, FindOutput>(
+          functions,
+          'findEleveIdentity'
         )
-        return
+        const res = await call({
+          mode: 'byIdentity',
+          nom: cleanNom,
+          genre: genre as 'M' | 'F',
+          dateNaissance,
+        })
+
+        if (!res.data.match) {
+          setError(
+            "Identité introuvable. Vérifiez l'orthographe exacte de votre nom et que l'école a bien créé votre profil."
+          )
+          return
+        }
+        classeId = res.data.match.classeId
+      } catch (err) {
+        const errCode = (err as FunctionsError)?.code
+        if (!isFallbackCode(errCode)) {
+          // Non-fallback error (e.g. resource-exhausted, invalid-argument)
+          console.error('[EleveSignup] callable error:', err)
+          setError('Vérification impossible. Réessayez dans quelques minutes.')
+          return
+        }
+
+        // Legacy fallback: direct collectionGroup query (same as pre-E2).
+        // Requires the composite index in firestore.indexes.json.
+        const q = query(
+          collectionGroup(db, 'eleves'),
+          where('nom', '==', cleanNom),
+          where('genre', '==', genre),
+          where('date_naissance', '==', dateNaissance)
+        )
+        const snap = await getDocs(q)
+
+        if (snap.empty) {
+          setError(
+            "Identité introuvable. Vérifiez l'orthographe exacte de votre nom et que l'école a bien créé votre profil."
+          )
+          return
+        }
+
+        const eleveSnap = snap.docs[0]
+        const eleveData = eleveSnap.data() as Eleve
+        void eleveData
+        classeId = eleveSnap.ref.parent.parent?.id ?? null
       }
 
-      // Take the first match (in practice unique per élève)
-      const eleveSnap = snap.docs[0]
-      const eleveData = eleveSnap.data() as Eleve
-      void eleveData
-      const classeId = eleveSnap.ref.parent.parent?.id
       if (!classeId) {
         setError('Données incomplètes. Contactez votre administration.')
         return

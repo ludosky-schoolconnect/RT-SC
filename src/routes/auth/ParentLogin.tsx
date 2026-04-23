@@ -17,9 +17,10 @@ import {
   collectionGroup, getDocs, query, where, doc as fsDoc, getDoc, updateDoc,
 } from 'firebase/firestore'
 import { signInAnonymously } from 'firebase/auth'
+import { httpsCallable, type FunctionsError } from 'firebase/functions'
 import { KeyRound, ArrowRight, ArrowLeft, Heart, Check } from 'lucide-react'
 
-import { auth, db } from '@/firebase'
+import { auth, db, functions } from '@/firebase'
 import { nomClasse } from '@/lib/benin'
 import type { Classe, Eleve } from '@/types/models'
 import type { ParentSession, ParentChild } from '@/types/roles'
@@ -28,6 +29,32 @@ import { useToast } from '@/stores/toast'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+
+/**
+ * Session E2 — findEleveIdentity callable for parent-passkey lookup.
+ * Returns only { eleveId, classeId }; the full éleve doc read happens
+ * as a follow-up via getDoc (same as pre-E2 flow) so the callable
+ * return payload stays minimal.
+ */
+interface FindInput {
+  mode: 'byParentPasskey'
+  passkey: string
+}
+interface FindOutput {
+  match: { eleveId: string; classeId: string } | null
+}
+
+/** Error codes meaning "Blaze not active — fall back to legacy path". */
+function isFallbackCode(code: string | undefined): boolean {
+  return (
+    code === 'functions/not-found' ||
+    code === 'functions/unavailable' ||
+    code === 'functions/internal' ||
+    code === 'not-found' ||
+    code === 'unavailable' ||
+    code === 'internal'
+  )
+}
 
 export default function ParentLogin() {
   const navigate = useNavigate()
@@ -58,26 +85,62 @@ export default function ParentLogin() {
 
     setSubmitting(true)
     try {
-      // collectionGroup query across all classes → matching élève
-      const snap = await getDocs(
-        query(
-          collectionGroup(db, 'eleves'),
-          where('passkeyParent', '==', cleaned)
-        )
-      )
-      if (snap.empty) {
-        setError('Code parent inconnu. Vérifiez avec l\'école.')
-        return
-      }
-      const eleveDoc = snap.docs[0]
-      const eleve = { id: eleveDoc.id, ...(eleveDoc.data() as Omit<Eleve, 'id'>) }
+      // Session E2 — server-side lookup first, legacy collectionGroup
+      // scan as fallback. Once Blaze is on, the callable does the
+      // scan via admin SDK and the fallback below becomes dead code.
+      let eleveId: string | null = null
+      let classeId: string | null = null
 
-      // Reach back up to the parent classe doc — path is classes/{cid}/eleves/{eid}
-      const classeId = eleveDoc.ref.parent.parent?.id
-      if (!classeId) {
-        setError('Erreur de structure. Contactez l\'école.')
+      try {
+        const call = httpsCallable<FindInput, FindOutput>(
+          functions,
+          'findEleveIdentity'
+        )
+        const res = await call({ mode: 'byParentPasskey', passkey: cleaned })
+        if (!res.data.match) {
+          setError("Code parent inconnu. Vérifiez avec l'école.")
+          return
+        }
+        eleveId = res.data.match.eleveId
+        classeId = res.data.match.classeId
+      } catch (err) {
+        const errCode = (err as FunctionsError)?.code
+        if (!isFallbackCode(errCode)) {
+          console.error('[ParentLogin] callable error:', err)
+          setError('Vérification impossible. Réessayez dans quelques minutes.')
+          return
+        }
+
+        // Legacy fallback — same as pre-E2 behavior
+        const snap = await getDocs(
+          query(
+            collectionGroup(db, 'eleves'),
+            where('passkeyParent', '==', cleaned)
+          )
+        )
+        if (snap.empty) {
+          setError("Code parent inconnu. Vérifiez avec l'école.")
+          return
+        }
+        eleveId = snap.docs[0].id
+        classeId = snap.docs[0].ref.parent.parent?.id ?? null
+      }
+
+      if (!eleveId || !classeId) {
+        setError("Erreur de structure. Contactez l'école.")
         return
       }
+
+      // Fetch full éleve doc to get nom/genre for the session.
+      // Currently passes the `allow read: if true` rule; once E3
+      // tightens that rule, this read will need to happen after the
+      // anonymous sign-in below.
+      const eleveSnap = await getDoc(fsDoc(db, 'classes', classeId, 'eleves', eleveId))
+      if (!eleveSnap.exists()) {
+        setError("Profil élève introuvable. Contactez l'école.")
+        return
+      }
+      const eleve = { id: eleveSnap.id, ...(eleveSnap.data() as Omit<Eleve, 'id'>) }
 
       // Detect duplicate: same child already linked to this session
       if (
@@ -91,7 +154,7 @@ export default function ParentLogin() {
 
       const classeSnap = await getDoc(fsDoc(db, 'classes', classeId))
       if (!classeSnap.exists()) {
-        setError('Classe introuvable. Contactez l\'école.')
+        setError("Classe introuvable. Contactez l'école.")
         return
       }
       const classe = { id: classeSnap.id, ...(classeSnap.data() as Omit<Classe, 'id'>) }

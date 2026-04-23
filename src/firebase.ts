@@ -28,6 +28,7 @@ import {
   type CollectionReference,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
+import { getFunctions } from 'firebase/functions'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FB_API_KEY,
@@ -51,6 +52,25 @@ export const db = initializeFirestore(app, {
 })
 
 export const storage = getStorage(app)
+
+/**
+ * Cloud Functions client (Session E2).
+ *
+ * Region pinned to us-central1 — matches all of our deployed
+ * functions' region config. Change here if you ever migrate
+ * functions to another region.
+ *
+ * Consumers call this through `httpsCallable(functions, 'name')`:
+ *
+ *   const fn = httpsCallable<InputT, OutputT>(functions, 'verifyProfLogin')
+ *   const res = await fn({ email, passkey })
+ *
+ * Pre-Blaze, any call() will throw with code 'functions/not-found'
+ * or 'functions/unavailable' — callers should catch those and
+ * fall back to the legacy client-side path. Post-Blaze activation,
+ * calls succeed silently and the fallback becomes dead code.
+ */
+export const functions = getFunctions(app, 'us-central1')
 
 // ─────────────────────────────────────────────────────────────
 // Path → Firestore ref helpers
