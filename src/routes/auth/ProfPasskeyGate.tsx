@@ -14,7 +14,7 @@
  * The gate does NOT auto-bypass when the user is already logged in.
  * A fresh tab with a valid Firebase Auth session still prompts for
  * the passkey. Only within the SAME tab is the prompt suppressed
- * (via sessionStorage) for the 12-hour TTL. This is deliberate: if
+ * (via sessionStorage) for the 4-hour TTL. This is deliberate: if
  * we skipped the challenge whenever Firebase Auth was valid, the
  * gate would be useless against the actual "lost/shared device"
  * threat model.
@@ -23,7 +23,7 @@
  *
  * **Post-Blaze (preferred)**: email + per-prof passkey, verified
  * server-side via the `verifyProfLogin` callable. The callable
- * returns an HMAC-signed token (12h TTL) we stash in sessionStorage.
+ * returns an HMAC-signed token (4h TTL) we stash in sessionStorage.
  * Version-bumping a prof's passkey invalidates any outstanding tokens.
  *
  * **Pre-Blaze (fallback)**: the legacy school-wide `passkeyProf`
@@ -40,7 +40,7 @@
  *
  * Persistence:
  *   On success, sessionStorage stores { token?, expiresAt, mode }
- *   scoped by projectId. Closed tab = re-arm. 12h TTL as a safety
+ *   scoped by projectId. Closed tab = re-arm. 4h TTL as a safety
  *   floor even for long-running tabs.
  *
  * ─── Why keep the legacy fallback ────────────────────────
@@ -146,7 +146,7 @@ export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
   // defeat the entire point of the gate.
   //
   // Within a single tab, once the gate is unlocked it stays unlocked
-  // until the tab closes or the 12h TTL expires — so a prof who just
+  // until the tab closes or the 4h TTL expires — so a prof who just
   // logged in isn't re-prompted on every route change. sessionStorage
   // (not localStorage) ensures tab death re-arms the gate.
   if (unlocked) {
@@ -161,7 +161,7 @@ export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
 
     if (!realKey) {
       // No passkey set yet — first-run admin bootstrap. Let them in.
-      writeGate({ mode: 'legacy', expiresAt: Date.now() + 12 * 60 * 60_000 })
+      writeGate({ mode: 'legacy', expiresAt: Date.now() + 4 * 60 * 60_000 })
       setUnlocked(true)
       return
     }
@@ -173,7 +173,7 @@ export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
       return
     }
 
-    writeGate({ mode: 'legacy', expiresAt: Date.now() + 12 * 60 * 60_000 })
+    writeGate({ mode: 'legacy', expiresAt: Date.now() + 4 * 60 * 60_000 })
     setUnlocked(true)
   }
 

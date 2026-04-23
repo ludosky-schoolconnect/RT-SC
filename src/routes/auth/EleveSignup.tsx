@@ -37,8 +37,13 @@ interface VerifyResult {
 }
 
 /**
- * Session E2 — findEleveIdentity callable shape.
- * Returns { match: { eleveId, classeId } | null }
+ * Session E2 → E3 — findEleveIdentity callable shape.
+ *
+ * E3 expanded the match payload so the client doesn't need to read
+ * the éleve or classe docs directly — the server-side admin-SDK
+ * lookup returns everything the signup success screen displays.
+ * This lets E3 tighten the eleves collectionGroup read rule without
+ * breaking signup.
  */
 interface FindInput {
   mode: 'byIdentity'
@@ -47,7 +52,14 @@ interface FindInput {
   dateNaissance: string
 }
 interface FindOutput {
-  match: { eleveId: string; classeId: string } | null
+  match: {
+    eleveId: string
+    classeId: string
+    nom: string
+    genre: 'M' | 'F'
+    classePasskey: string
+    classeNom: string
+  } | null
 }
 
 /** Error codes from the callable that signify "Blaze not active yet — fall back". */
@@ -82,14 +94,22 @@ export default function EleveSignup() {
 
     setSubmitting(true)
     try {
-      // Session E2 — server-side lookup first, legacy scan as fallback.
+      // Session E3 — server-side lookup first, legacy scan as fallback.
       //
-      // Post-Blaze, findEleveIdentity does the collectionGroup query
-      // via admin SDK (bypasses rules). Pre-Blaze, the callable is not
-      // deployed and we catch the error to fall back to the legacy
-      // client-side query. Behavior pre-Blaze is identical to before
-      // Session E2.
-      let classeId: string | null = null
+      // The callable (post-Blaze) returns the full payload needed for
+      // the success screen (eleveId, classeId, nom, classePasskey,
+      // classeNom) so we don't need any follow-up doc reads — which
+      // matters because E3 tightens the eleves collectionGroup read
+      // rule to require auth + staff role.
+      //
+      // Pre-Blaze fallback runs the legacy client-side query + the
+      // follow-up classe doc read exactly as before E2. That path
+      // only works while the collectionGroup rule is still
+      // `allow read: if true`, i.e. BEFORE the E3 rules are deployed.
+      // If you deploy the E3 rules without Blaze being on, the
+      // fallback breaks — in practice, the E3 rules are deployed
+      // alongside Blaze activation, so the fallback path is only
+      // active in the pre-Blaze period.
 
       try {
         const call = httpsCallable<FindInput, FindOutput>(
@@ -109,39 +129,47 @@ export default function EleveSignup() {
           )
           return
         }
-        classeId = res.data.match.classeId
+
+        // Expanded payload → build result directly. No follow-up read.
+        setResult({
+          passkey: res.data.match.classePasskey,
+          classeNom: res.data.match.classeNom,
+        })
+        return
       } catch (err) {
         const errCode = (err as FunctionsError)?.code
         if (!isFallbackCode(errCode)) {
-          // Non-fallback error (e.g. resource-exhausted, invalid-argument)
           console.error('[EleveSignup] callable error:', err)
           setError('Vérification impossible. Réessayez dans quelques minutes.')
           return
         }
-
-        // Legacy fallback: direct collectionGroup query (same as pre-E2).
-        // Requires the composite index in firestore.indexes.json.
-        const q = query(
-          collectionGroup(db, 'eleves'),
-          where('nom', '==', cleanNom),
-          where('genre', '==', genre),
-          where('date_naissance', '==', dateNaissance)
-        )
-        const snap = await getDocs(q)
-
-        if (snap.empty) {
-          setError(
-            "Identité introuvable. Vérifiez l'orthographe exacte de votre nom et que l'école a bien créé votre profil."
-          )
-          return
-        }
-
-        const eleveSnap = snap.docs[0]
-        const eleveData = eleveSnap.data() as Eleve
-        void eleveData
-        classeId = eleveSnap.ref.parent.parent?.id ?? null
+        // Fall through to legacy path below
       }
 
+      // ─── Legacy fallback (pre-Blaze) ────────────────────────
+      // Direct collectionGroup query — same as pre-E2 behavior.
+      // Requires the composite index in firestore.indexes.json AND
+      // the `allow read: if true` rule on /{path=**}/eleves/{eleveId}
+      // (which is the pre-E3 state).
+      const q = query(
+        collectionGroup(db, 'eleves'),
+        where('nom', '==', cleanNom),
+        where('genre', '==', genre),
+        where('date_naissance', '==', dateNaissance)
+      )
+      const snap = await getDocs(q)
+
+      if (snap.empty) {
+        setError(
+          "Identité introuvable. Vérifiez l'orthographe exacte de votre nom et que l'école a bien créé votre profil."
+        )
+        return
+      }
+
+      const eleveSnap = snap.docs[0]
+      const eleveData = eleveSnap.data() as Eleve
+      void eleveData
+      const classeId = eleveSnap.ref.parent.parent?.id
       if (!classeId) {
         setError('Données incomplètes. Contactez votre administration.')
         return

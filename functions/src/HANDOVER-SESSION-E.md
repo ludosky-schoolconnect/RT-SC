@@ -3,161 +3,105 @@
 **Purpose**: server-side foundation for per-prof login passkeys, plus
 Firestore trigger-based orphan cleanup for deletions the client misses.
 
-**Deployment state**: E1a + E1b + E2 shipped. E3 pending.
-All pending work is Blaze-deployable; nothing activates until Blaze is on.
+**Deployment state**: E1a + E1b + E2 + E2 hotfix + E3 complete.
+Session E is fully shipped. Functions are dormant until Blaze deploy.
 
 ---
 
-## What shipped in E1a
+## Session E contents (full list)
 
-### Blaze-dormant (6 files in `functions/src/`)
+### E1a — foundation
+- `functions/src/lib/passkey.ts` — 6-digit gen, HMAC sign/verify, rate limiter
+- `functions/src/http/verifyProfLogin.ts` — email+passkey → HMAC token callable
+- `functions/src/triggers/onProfActivated.ts` — auto-generate passkey on approval
+- `functions/src/triggers/onProfDeleteCascade.ts` — clean matieresProfesseurs, notes/colles author refs
+- `functions/src/triggers/onClasseDelete.ts` — clean presences, publications, emploisDuTemps, coefficients
+- Client: SecuriteConfig type changes, useProfsMutations cleanup, PasskeyProfPanel UI simplification
 
-| File | Role |
-|---|---|
-| `lib/passkey.ts` | Helpers: 6-digit generator, HMAC sign/verify, rate limiter |
-| `http/verifyProfLogin.ts` | HTTPS callable: email+passkey → HMAC token |
-| `triggers/onProfActivated.ts` | Generates loginPasskey + emails on en_attente→actif |
-| `triggers/onProfDeleteCascade.ts` | Cleans matieresProfesseurs, notes.professeurId, colles.donneParProfId |
-| `triggers/onClasseDelete.ts` | Cleans presences, publications, emploisDuTemps, coefficients_{cid} |
+### E1b — orphan + scheduled + self-service
+- `functions/src/triggers/onEleveDeleteCascade.ts` — safety net + annuaire + claims
+- `functions/src/triggers/onPreInscriptionDelete.ts` — docs subcol cleanup
+- `functions/src/scheduled/expireStalePasskeys.ts` — weekly 90-day inactivity expiry
+- `functions/src/http/findEleveIdentity.ts` — identity lookup callable (E3 later expanded payload)
+- `functions/src/http/regenerateOwnPasskey.ts` — prof self-rotation callable
 
-### Client changes (immediate, non-Blaze)
+### E2 — client wiring with pre-Blaze fallbacks
+- `src/firebase.ts` — export `functions` at us-central1
+- `src/routes/auth/ProfPasskeyGate.tsx` — email+passkey gate, callable-first with legacy fallback
+- `src/routes/auth/EleveSignup.tsx` — findEleveIdentity callable with legacy fallback
+- `src/routes/auth/ParentLogin.tsx` — findEleveIdentity callable with legacy fallback
+- `src/routes/prof/tabs/profil/MonProfilSection.tsx` — "Régénérer mon code" card
 
-- `src/types/models.ts` — dropped rotation fields; added loginPasskey, loginPasskeyVersion, lastLoginAt on Professeur
-- `src/hooks/useProfsMutations.ts` — removed rotation timestamp writes (hotfix re-added useUpdateOwnProfSignature)
-- `src/routes/admin/tabs/profs/PasskeyProfPanel.tsx` — removed rotation UI theater
+### E2 hotfix — security + TS
+- ProfPasskeyGate no longer auto-bypasses authenticated users (fresh tab always prompts; deliberate for "lost device" threat model)
+- Removed dead bare-string error-code comparisons across all 4 client surfaces (TS2367 cleanup)
 
----
-
-## What shipped in E1b
-
-### Blaze-dormant (5 files in `functions/src/`)
-
-| File | Role |
-|---|---|
-| `triggers/onEleveDeleteCascade.ts` | Safety-net éleve subcollection cleanup + annuaire + quete claims |
-| `triggers/onPreInscriptionDelete.ts` | Deletes documents/* subcollection |
-| `scheduled/expireStalePasskeys.ts` | Weekly Sunday 03:00 — clears loginPasskey on profs inactive 90+ days |
-| `http/findEleveIdentity.ts` | HTTPS callable for éleve signup + parent login identity lookup |
-| `http/regenerateOwnPasskey.ts` | HTTPS callable for prof self-rotation |
-
----
-
-## What shipped in E2 (THIS session)
-
-All client-side. Each surface tries the Blaze callable first; on
-`functions/not-found` / `functions/unavailable`, falls back to the
-pre-Blaze behavior. Post-Blaze, callables succeed first and fallback
-is silently skipped (dead branch).
-
-### Client files modified (5)
-
-| File | Change |
-|---|---|
-| `src/firebase.ts` | Added `getFunctions` import + `functions = getFunctions(app, 'us-central1')` export |
-| `src/routes/auth/ProfPasskeyGate.tsx` | Email field added alongside passkey; calls `verifyProfLogin`; richer sessionStorage shape with token + expiresAt + mode; backwards-compat with Session 4b bare "1" marker; 12h TTL |
-| `src/routes/auth/EleveSignup.tsx` | Calls `findEleveIdentity` with `mode: 'byIdentity'`; legacy collectionGroup fallback preserved verbatim |
-| `src/routes/auth/ParentLogin.tsx` | Calls `findEleveIdentity` with `mode: 'byParentPasskey'`; legacy collectionGroup fallback; follow-up direct doc read on the éleve for nom/genre |
-| `src/routes/prof/tabs/profil/MonProfilSection.tsx` | Added "Code de connexion" card with "Régénérer mon code" button + confirmation modal + post-regenerate display with copy button |
-
-### Fallback error-code handling
-
-Each surface catches these callable error codes as "Blaze not deployed yet":
-- `functions/not-found`
-- `functions/unavailable`
-- `functions/internal` (sometimes surfaces when function cold-starts on missing secret; conservative fallback)
-
-For real errors (unauthenticated, resource-exhausted, permission-denied), surfaces show appropriate user-facing messages, NOT the fallback.
-
-### Notable design decisions
-
-1. **ProfPasskeyGate email field is optional during transition**. If empty, the gate skips the callable and goes straight to legacy school-wide passkey compare. Rationale: profs who haven't migrated to per-prof passkeys yet can still use the existing flow without confusion.
-
-2. **findEleveIdentity returns only `{eleveId, classeId}`** — the full éleve doc read still happens client-side via `getDoc` on the specific path. This works today because `/{path=**}/eleves/{eleveId}` has `allow read: if true`. **This will break when E3 tightens that rule** — see E3 section below for the architectural fix.
-
-3. **regenerateOwnPasskey callable returns the passkey in the response**, not just via email. This is intentional: profs see the code immediately in the UI modal and email is redundancy for when they close the tab. The callable body was written this way in E1b.
+### E3 — rules tightening + admin migration + TTL tune
+- `functions/src/http/findEleveIdentity.ts` — **expanded return payload** to include `nom`, `genre`, `classePasskey`, `classeNom` so clients no longer need follow-up éleve doc reads (enables tightening the eleves collectionGroup rule without breaking signup/parent login)
+- `functions/src/http/regeneratePasskeyForProf.ts` — admin-only callable with role check, used by the migration button
+- `functions/src/index.ts` — Session E3 export
+- `firestore.rules` — eleves collectionGroup read tightened to `isStaff()`; professeurs update rule blocks client writes to `loginPasskey`, `loginPasskeyVersion`, `lastLoginAt` fields (server admin SDK bypasses, as expected)
+- `src/hooks/useProfsMutations.ts` — `useRegeneratePasskeyForProf` hook wrapping the callable
+- `src/routes/admin/tabs/profs/MigrateProfPasskeysButton.tsx` — new admin UI card with "Générer les codes manquants" button, iterates candidates, shows per-prof progress
+- `src/routes/auth/ProfPasskeyGate.tsx` — **TTL change 12h → 4h** to catch "walked away from device" within school-day scenarios (covers PWA background-persistence gap)
+- `src/routes/auth/EleveSignup.tsx` — consume expanded findEleveIdentity payload directly (no follow-up doc read); legacy fallback preserved
+- `src/routes/auth/ParentLogin.tsx` — same pattern
 
 ---
 
-## What is NOT yet built
+## Where to mount MigrateProfPasskeysButton
 
-### E3 — rules tightening + admin migration button + architectural decision
+The component is in `src/routes/admin/tabs/profs/` next to `PasskeyProfPanel.tsx`. Wherever the admin Profs tab renders (likely `ProfsTab.tsx`), import and render it alongside or above `<PasskeyProfPanel />`. It auto-hides when there's nothing to migrate, so leaving it mounted permanently is safe.
 
-1. **Architectural decision for `findEleveIdentity`**: Before tightening the eleves collectionGroup read rule, decide whether to expand the callable's return payload to include `nom`, `genre`, `passkeyParent` (class passkey via joined lookup server-side) so the client never needs to read the éleve doc directly post-auth. Alternative: keep callable returning just IDs and rely on the anonymous-sign-in happening BEFORE the follow-up read, with a rule like `allow read: if request.auth != null`. The second option is simpler but weaker (any anonymous user can scan once they've anon-signed-in — which defeats the goal of closing the collectionGroup hole). **Recommended: expand callable return.**
-
-2. **`firestore.rules` changes**:
-   - `/{path=**}/eleves/{eleveId}` → `allow read: if request.auth != null && isStaff()` (assuming we took the callable-expansion path above; if not, loosen to `if request.auth != null`)
-   - `/professeurs/{uid}` update rule — block client-direct writes to `loginPasskey`, `loginPasskeyVersion`, `lastLoginAt` fields:
-     ```
-     allow update: if ...existing conditions...
-                   && !request.resource.data.diff(resource.data).affectedKeys()
-                      .hasAny(['loginPasskey', 'loginPasskeyVersion', 'lastLoginAt']);
-     ```
-     (Server-side admin SDK writes bypass rules, so the triggers/callables work unaffected.)
-
-3. **Admin migration UI — "Générer les codes manquants"**:
-   - Button in AdminDashboard → Profs tab, near PasskeyProfPanel
-   - Calls a new admin-only callable `regeneratePasskeyForProf({ profId })` that runs the onProfActivated generation logic
-   - Iterates all active profs with missing/empty `loginPasskey`
-   - Shows progress + per-prof result
-   - Needed for backfilling profs who were already `actif` before onProfActivated deployed
-
-4. **Update `DEPLOY-ONCE-BLAZE-IS-READY.md`** — confirm the full Session E deploy checklist is in sync.
+Example integration (review wherever the admin Profs tab is composed):
+```tsx
+import { MigrateProfPasskeysButton } from './MigrateProfPasskeysButton'
+// ...
+<MigrateProfPasskeysButton />
+<PasskeyProfPanel />
+```
 
 ---
 
-## Session E2 migration notes
+## Rules coordination on deploy day
 
-- **Session 4b marker compatibility**: existing tabs with `sessionStorage[GATE_KEY] === '1'` (the bare "1" from before E2) are still recognized as legacy-mode unlocks by `readGate()`. They'll upgrade to the richer JSON shape on next successful gate entry.
-- **No migration needed for existing sessions**: profs already authenticated bypass the gate entirely (`alreadyAuthed` check unchanged).
-- **Dev-mode smoke test pre-Blaze**: every callable path intentionally fails fast with `functions/not-found` locally (since no functions are deployed) and falls back to legacy. Gate still unlocks, éleve signup still works, parent login still works. MonProfilSection shows a toast explaining the regenerate feature isn't available yet.
+The tightened `firestore.rules` **depends on Blaze being active** for client flows to work:
 
----
+- Éleve signup + parent login now route through `findEleveIdentity` (post-Blaze) OR the legacy collectionGroup query (pre-Blaze, which only works while the rule is `allow read: if true`).
+- **If you deploy the E3 rules without Blaze being on, signup and parent login break** — the fallback path hits the tightened collectionGroup read and fails.
 
-## Critical conventions (match when writing E3)
+**Deploy day sequence**:
+1. Set `HMAC_SECRET` per school
+2. `firebase deploy --only functions` (Session E goes live)
+3. **Then** deploy the E3 rules: `./deploy-school.sh --rules-only schools/<id>.json`
+4. Functions must be live BEFORE rules. Reverse order breaks signup.
 
-- File-top JSDoc: purpose, invariants, idempotency, what NOT done
-- Imports: firebase-admin/*, firebase-functions/v2/*, node:crypto
-- Error handling: structured log context, rethrow only when retry helps
-- Idempotency guards: "already done?" checks everywhere
-- Session labels in comments: `// Session E1a`, `// Session E1b`, `// Session E2`, etc.
-- HMAC_SECRET: any function using it declares `secrets: [HMAC_SECRET]`
+**If you redeploy the RT-SC client without deploying the rules**, that's fine — the client tries the callable first anyway, and the fallback still has a valid (pre-E3) rule to read against.
 
 ---
 
-## Key architectural decisions (recap)
+## Rollback for E3 specifically
 
-1. Separate trigger for onProfDeleteCascade vs onProfDelete — single responsibility
-2. Plaintext passkey storage — 6 digits, rate-limited, rules-restricted
-3. HMAC payload.v (passkeyVersion) — rotation invalidates all tokens without blacklist
-4. Client-side fallbacks — preserve pre-Blaze behavior; become dead code post-activation
-5. onProfActivated not onProfCreate — admin approval is the natural credential-issuance moment
-6. findEleveIdentity returns only `{eleveId, classeId}` — see E3 note for the architectural revisit
+If E3 rules cause issues post-deploy:
 
----
+```bash
+# Revert the tightened rules (keep E3 client + functions untouched)
+git revert <E3-commit-sha>
+./deploy-school.sh --rules-only schools/<id>.json
+```
 
-## Risk & rollback
+This restores `allow read: if true` on the eleves collectionGroup and unblocks signup even if something went wrong on the functions side.
 
-- **E2 client changes** are all additive (new email field optional; new regenerate card doesn't touch signature flow; callable paths are try/catch with fallback). Rollback via `git revert` of the E2 commit is safe and returns to pre-E2 behavior entirely.
+To fully roll back E3:
+```bash
+firebase functions:delete regeneratePasskeyForProf --project <sid> --force
+```
 
-- **Blaze deploy of E1a+E1b functions**: nothing fires pre-deploy. Post-deploy, the E2 client wires connect automatically. No coordination needed between client deploy and functions deploy — they can happen in any order.
-
-- **Emergency rollback** (if any E-session trigger misbehaves after Blaze):
-  ```bash
-  firebase functions:delete onProfActivated --project <sid> --force
-  firebase functions:delete onProfDeleteCascade --project <sid> --force
-  firebase functions:delete onClasseDelete --project <sid> --force
-  firebase functions:delete onEleveDeleteCascade --project <sid> --force
-  firebase functions:delete onPreInscriptionDelete --project <sid> --force
-  firebase functions:delete expireStalePasskeys --project <sid> --force
-  firebase functions:delete verifyProfLogin --project <sid> --force
-  firebase functions:delete findEleveIdentity --project <sid> --force
-  firebase functions:delete regenerateOwnPasskey --project <sid> --force
-  ```
-  Clients fall back to legacy paths automatically.
+Rolling back E1a/E1b/E2 listed in earlier handover versions — same pattern.
 
 ---
 
-## Secrets & env vars needed
+## Secrets & env vars
 
 Before deploying Session E functions:
 
@@ -171,20 +115,30 @@ done
 rm /tmp/hmac-secret.txt
 ```
 
-`RESEND_API_KEY` is reused by onProfActivated, expireStalePasskeys, regenerateOwnPasskey.
+`RESEND_API_KEY` is reused by onProfActivated, expireStalePasskeys, regenerateOwnPasskey, regeneratePasskeyForProf.
 
 ---
 
-## Where to resume
+## Testing checklist (post-Blaze deploy)
 
-**Next session's first action**: say "build E3" to continue.
-Reference this file.
+1. **Signup (éleve)**: fresh identity → callable returns expanded payload → success screen shows class + passkey, no direct éleve doc read performed.
+2. **Parent login**: passkey lookup → callable returns all fields → session created, anon signin happens, éleve marker updated.
+3. **Prof signup**: new prof submits via ProfAuth → en_attente → admin flips to actif → onProfActivated fires → prof receives email with loginPasskey → prof can unlock gate with email + that passkey.
+4. **Prof self-rotation**: Mon profil → Régénérer mon code → new code shown immediately + emailed.
+5. **Admin migration**: admin clicks "Générer les codes manquants" → progress shows per-prof → emails go out → candidates list empties.
+6. **Gate TTL**: unlock gate → leave tab open for 5 hours → next interaction re-prompts.
+7. **Gate PWA**: install PWA → unlock → swipe away → relaunch → re-prompts.
+8. **Rules**: F12 an admin session, try `setDoc('professeurs/<uid>', { loginPasskey: '000000' })` → should fail with permission-denied.
+9. **Orphan cleanup**: delete a class with presences/seances → verify /classes/{cid}/presences and /emploisDuTemps/{cid}/seances are gone.
 
-E3 output will be:
-- Decision on findEleveIdentity return shape (probably expand to include nom/genre/class passkey)
-- Firestore rules edits (tighten eleves collectionGroup + restrict loginPasskey field writes)
-- New callable `regeneratePasskeyForProf` (admin-only)
-- New admin UI button in Profs tab
-- DEPLOY-ONCE-BLAZE-IS-READY.md final sync
+---
 
-Last updated: 23 April 2026 — Session E2 complete.
+## What comes after Session E
+
+Session E is complete. Next likely work areas (not scoped or committed to):
+
+- **Session F (hypothetical) — gate hardening**: re-prompt on `visibilitychange` when PWA comes back from background > N minutes. Would close the "PWA stayed in memory through the whole afternoon" gap.
+- **Legacy path removal**: once Blaze is proven stable in production for a month or two, remove the pre-Blaze fallbacks from the 4 client surfaces. Saves client bundle size, removes dead code.
+- **Session D (originally planned) — Frontend cleanup**: remove client-side workarounds now redundant with Cloud Functions (e.g. the client's presence rollover that dailyPresenceRollover supersedes).
+
+Last updated: 23 April 2026 — Session E3 complete.

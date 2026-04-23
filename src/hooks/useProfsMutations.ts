@@ -482,3 +482,68 @@ export function useUpdateOwnProfSignature() {
     },
   })
 }
+
+// ─── Session E3 — admin passkey regeneration for another prof ────
+
+/**
+ * Calls the `regeneratePasskeyForProf` Cloud Function. Admin-only.
+ *
+ * Used by:
+ *   - "Générer les codes manquants" migration button in the Profs
+ *     tab (batch iteration over profs missing `loginPasskey`)
+ *   - Future per-prof "Reset code" action from the prof row
+ *
+ * Server-side behavior (see functions/src/http/regeneratePasskeyForProf.ts):
+ *   - Verifies caller is an active admin
+ *   - Generates fresh 6-digit passkey
+ *   - Stamps loginPasskey + increments loginPasskeyVersion (this
+ *     invalidates all existing HMAC tokens for that prof)
+ *   - Emails the prof their new code via Resend
+ *
+ * Returns `{ ok, profId, passkey, wasAlreadySet }` so the caller can
+ * show migration progress in the UI. The passkey is returned so an
+ * admin running migration can verify delivery immediately; DO NOT
+ * display the passkey to anyone other than the admin (e.g. never
+ * surface it in a shared notification or log that ends up anywhere
+ * besides the admin's own screen).
+ *
+ * Error codes to surface:
+ *   - functions/not-found | unavailable → Blaze not deployed yet
+ *   - functions/permission-denied → caller isn't admin
+ *   - functions/failed-precondition → target prof not actif
+ *   - functions/resource-exhausted → 20/15min admin rate limit hit
+ */
+export interface RegeneratePasskeyForProfInput {
+  profId: string
+}
+
+export interface RegeneratePasskeyForProfOutput {
+  ok: boolean
+  profId: string
+  passkey: string
+  wasAlreadySet: boolean
+}
+
+export function useRegeneratePasskeyForProf() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (
+      input: RegeneratePasskeyForProfInput
+    ): Promise<RegeneratePasskeyForProfOutput> => {
+      const { httpsCallable } = await import('firebase/functions')
+      const { functions } = await import('@/firebase')
+      const call = httpsCallable<
+        RegeneratePasskeyForProfInput,
+        RegeneratePasskeyForProfOutput
+      >(functions, 'regeneratePasskeyForProf')
+      const res = await call(input)
+      return res.data
+    },
+    onSuccess: () => {
+      // Refresh the profs list so the UI reflects the new passkey
+      // version / existence flag if the admin is filtering by it.
+      qc.invalidateQueries({ queryKey: ['profs'] })
+    },
+  })
+}

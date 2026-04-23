@@ -36,12 +36,28 @@ import { Button } from '@/components/ui/Button'
  * as a follow-up via getDoc (same as pre-E2 flow) so the callable
  * return payload stays minimal.
  */
+/**
+ * Session E2 → E3 — findEleveIdentity callable shape.
+ *
+ * E3 expanded the match payload to include nom/genre/class info so
+ * the client no longer needs a follow-up éleve doc read. Once the
+ * E3 rules tighten the eleves collectionGroup to auth-required,
+ * parents would fail the direct read otherwise (they sign in
+ * anonymously only AFTER identity match).
+ */
 interface FindInput {
   mode: 'byParentPasskey'
   passkey: string
 }
 interface FindOutput {
-  match: { eleveId: string; classeId: string } | null
+  match: {
+    eleveId: string
+    classeId: string
+    nom: string
+    genre: 'M' | 'F'
+    classePasskey: string
+    classeNom: string
+  } | null
 }
 
 /** Error codes meaning "Blaze not active — fall back to legacy path". */
@@ -82,11 +98,16 @@ export default function ParentLogin() {
 
     setSubmitting(true)
     try {
-      // Session E2 — server-side lookup first, legacy collectionGroup
-      // scan as fallback. Once Blaze is on, the callable does the
-      // scan via admin SDK and the fallback below becomes dead code.
+      // Session E3 — callable returns everything we need. Legacy
+      // fallback does the classic collectionGroup + getDoc reads.
+      //
+      // We collect the minimal set of fields the success flow needs
+      // into local variables, populated by whichever path succeeds.
       let eleveId: string | null = null
       let classeId: string | null = null
+      let eleveNom: string | null = null
+      let eleveGenre: 'M' | 'F' | null = null
+      let classeNomStr: string | null = null
 
       try {
         const call = httpsCallable<FindInput, FindOutput>(
@@ -100,6 +121,9 @@ export default function ParentLogin() {
         }
         eleveId = res.data.match.eleveId
         classeId = res.data.match.classeId
+        eleveNom = res.data.match.nom
+        eleveGenre = res.data.match.genre
+        classeNomStr = res.data.match.classeNom
       } catch (err) {
         const errCode = (err as FunctionsError)?.code
         if (!isFallbackCode(errCode)) {
@@ -108,7 +132,8 @@ export default function ParentLogin() {
           return
         }
 
-        // Legacy fallback — same as pre-E2 behavior
+        // Legacy fallback — pre-Blaze path. Works while the eleves
+        // collectionGroup rule is still `allow read: if true`.
         const snap = await getDocs(
           query(
             collectionGroup(db, 'eleves'),
@@ -119,42 +144,43 @@ export default function ParentLogin() {
           setError("Code parent inconnu. Vérifiez avec l'école.")
           return
         }
-        eleveId = snap.docs[0].id
-        classeId = snap.docs[0].ref.parent.parent?.id ?? null
+        const eleveDoc = snap.docs[0]
+        eleveId = eleveDoc.id
+        classeId = eleveDoc.ref.parent.parent?.id ?? null
+        const eleveRaw = eleveDoc.data() as Eleve
+        eleveNom = eleveRaw.nom
+        eleveGenre = eleveRaw.genre
+
+        if (!classeId) {
+          setError("Erreur de structure. Contactez l'école.")
+          return
+        }
+
+        // Follow-up classe read to build the display name. Same
+        // pre-E3 behavior — direct classe docs are still readable.
+        const classeSnap = await getDoc(fsDoc(db, 'classes', classeId))
+        if (!classeSnap.exists()) {
+          setError("Classe introuvable. Contactez l'école.")
+          return
+        }
+        const classeRaw = { id: classeSnap.id, ...(classeSnap.data() as Omit<Classe, 'id'>) }
+        classeNomStr = nomClasse(classeRaw)
       }
 
-      if (!eleveId || !classeId) {
+      if (!eleveId || !classeId || !eleveNom || !eleveGenre || !classeNomStr) {
         setError("Erreur de structure. Contactez l'école.")
         return
       }
 
-      // Fetch full éleve doc to get nom/genre for the session.
-      // Currently passes the `allow read: if true` rule; once E3
-      // tightens that rule, this read will need to happen after the
-      // anonymous sign-in below.
-      const eleveSnap = await getDoc(fsDoc(db, 'classes', classeId, 'eleves', eleveId))
-      if (!eleveSnap.exists()) {
-        setError("Profil élève introuvable. Contactez l'école.")
-        return
-      }
-      const eleve = { id: eleveSnap.id, ...(eleveSnap.data() as Omit<Eleve, 'id'>) }
-
       // Detect duplicate: same child already linked to this session
       if (
         existingSession?.children.some(
-          (c) => c.eleveId === eleve.id && c.classeId === classeId
+          (c) => c.eleveId === eleveId && c.classeId === classeId
         )
       ) {
         setError('Cet enfant est déjà dans votre liste.')
         return
       }
-
-      const classeSnap = await getDoc(fsDoc(db, 'classes', classeId))
-      if (!classeSnap.exists()) {
-        setError("Classe introuvable. Contactez l'école.")
-        return
-      }
-      const classe = { id: classeSnap.id, ...(classeSnap.data() as Omit<Classe, 'id'>) }
 
       // Get or create the anonymous Firebase session uid
       let uid = existingSession?.uid
@@ -163,9 +189,12 @@ export default function ParentLogin() {
         uid = cred.user.uid
       }
 
-      // Best-effort write to mark active session on the élève
+      // Best-effort write to mark active session on the élève.
+      // Post-E3, this still works — Firestore rules permit an
+      // authenticated anon user to write `active_parent_session_uid`
+      // to their own session marker.
       try {
-        await updateDoc(fsDoc(db, 'classes', classeId, 'eleves', eleve.id), {
+        await updateDoc(fsDoc(db, 'classes', classeId, 'eleves', eleveId), {
           active_parent_session_uid: uid,
         })
       } catch {
@@ -173,11 +202,11 @@ export default function ParentLogin() {
       }
 
       const newChild: ParentChild = {
-        eleveId: eleve.id,
+        eleveId,
         classeId,
-        classeNom: nomClasse(classe),
-        nom: eleve.nom,
-        genre: eleve.genre,
+        classeNom: classeNomStr,
+        nom: eleveNom,
+        genre: eleveGenre,
       }
 
       const session: ParentSession = existingSession
@@ -195,8 +224,8 @@ export default function ParentLogin() {
       setParentSession(session)
       toast.success(
         isAddingChild
-          ? `${eleve.nom} ajouté à votre espace.`
-          : `Bienvenue. Espace de ${eleve.nom}.`
+          ? `${eleveNom} ajouté à votre espace.`
+          : `Bienvenue. Espace de ${eleveNom}.`
       )
       navigate('/parent', { replace: true })
     } catch (err) {
