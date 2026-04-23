@@ -26,26 +26,12 @@
  *    resolves, we hide the banner (Chrome also fires `appinstalled`
  *    if they accepted, which we listen to for the same effect).
  *
- * ─── Why in-memory is fine ────────────────────────────────────
- *
- * Persisting "dismissed" would be more polite, but the trade-off is:
- * - Chrome's beforeinstallprompt already has aggressive built-in
- *   throttling — after 2-3 dismissals via Chrome's native prompt,
- *   Chrome stops firing the event for ~90 days anyway.
- * - Users who DO want to install shouldn't have to hunt for the
- *   browser menu's "Install app" item just because they hit ×
- *   yesterday.
- * - Vanilla SchoolConnect worked this way and users were fine.
- *
  * ─── Platform support ────────────────────────────────────────
  *
- * - Chrome Android: fires `beforeinstallprompt`, banner works
- * - Chrome Desktop: fires it too (since Chrome 76)
+ * - Chrome Android/Desktop: fires beforeinstallprompt, banner works
  * - Edge Chromium: same as Chrome
- * - Safari iOS: DOES NOT fire beforeinstallprompt; Safari uses its
- *   own "Add to Home Screen" via the share sheet. This component
- *   simply never shows on iOS; that's expected behavior, not a bug.
- * - Firefox: doesn't fire it. Same — banner stays hidden.
+ * - Safari iOS/Firefox: don't fire this event. Banner stays hidden;
+ *   users install via browser menu. Expected, not a bug.
  */
 
 import { useEffect, useState } from 'react'
@@ -65,15 +51,12 @@ export function PwaInstallBanner() {
 
   useEffect(() => {
     function handler(e: Event) {
-      // Suppress Chrome's default mini-infobar
       e.preventDefault()
       setDeferredPrompt(e as BeforeInstallPromptEvent)
       setVisible(true)
     }
 
     function onInstalled() {
-      // User accepted the install (from our prompt, Chrome's menu,
-      // or anywhere else). Hide the banner permanently for this session.
       setVisible(false)
       setDeferredPrompt(null)
     }
@@ -88,8 +71,6 @@ export function PwaInstallBanner() {
   }, [])
 
   async function handleInstall() {
-    // Hide the banner immediately so the native dialog is the only
-    // thing on screen — same UX as vanilla.
     setVisible(false)
     if (!deferredPrompt) return
 
@@ -97,19 +78,13 @@ export function PwaInstallBanner() {
       await deferredPrompt.prompt()
       await deferredPrompt.userChoice
     } catch (err) {
-      // Chrome throws if prompt() is called twice or in the wrong
-      // state. Silent — the user can always reload to retry.
       console.warn('[PwaInstallBanner] prompt failed:', err)
     } finally {
-      // Chrome invalidates the event after one prompt() call, so
-      // we must discard it regardless of outcome.
       setDeferredPrompt(null)
     }
   }
 
   function handleDismiss() {
-    // In-memory only — reload re-arms it via Chrome re-firing
-    // beforeinstallprompt.
     setVisible(false)
   }
 
@@ -121,16 +96,19 @@ export function PwaInstallBanner() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10000] w-[min(340px,90vw)]"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10000] w-[min(360px,calc(100vw-1rem))]"
           role="dialog"
           aria-label="Proposition d'installation de l'application"
         >
-          <div className="flex items-center justify-between gap-3 bg-white border border-ink-100 rounded-xl shadow-lg px-3 py-2.5">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-navy text-gold font-bold shadow-sm">
+          <div className="flex items-center gap-2 bg-white border border-ink-100 rounded-xl shadow-lg p-2">
+            {/* Left: logo + text — min-w-0 + flex-1 means this block
+                shrinks when the buttons need space, so the buttons
+                are always visible. */}
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-navy text-gold font-display font-bold text-lg shadow-sm">
                 S
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="font-display text-[0.85rem] font-bold text-navy leading-tight truncate">
                   SchoolConnect
                 </p>
@@ -140,19 +118,21 @@ export function PwaInstallBanner() {
               </div>
             </div>
 
+            {/* Right: action buttons — shrink-0 so they always render,
+                fixed height matching flex row, touch-friendly targets. */}
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={handleDismiss}
                 aria-label="Fermer"
-                className="h-8 w-8 flex items-center justify-center rounded-md text-ink-400 hover:bg-ink-50 active:bg-ink-100 transition-colors"
+                className="h-9 w-9 flex items-center justify-center rounded-md text-ink-400 hover:bg-ink-50 active:bg-ink-100 transition-colors"
               >
-                <X className="h-4 w-4" aria-hidden />
+                <X className="h-5 w-5" aria-hidden />
               </button>
               <button
                 type="button"
                 onClick={handleInstall}
-                className="flex items-center gap-1.5 bg-navy text-gold font-bold text-[0.78rem] px-3 py-1.5 rounded-md shadow-sm hover:bg-navy-700 active:bg-navy-800 transition-colors"
+                className="flex items-center gap-1.5 bg-navy text-gold font-display font-bold text-[0.78rem] px-3 h-9 rounded-md shadow-sm hover:bg-navy-dark active:opacity-90 transition-all"
               >
                 <Download className="h-3.5 w-3.5" aria-hidden />
                 Installer
