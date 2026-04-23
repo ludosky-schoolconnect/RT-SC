@@ -37,3 +37,7 @@ pnpm-debug.log*
 .eslintcache
 .cache
 schools/
+
+# Build artifacts regenerated on every deploy
+tsconfig.tsbuildinfo
+.firebase/*.cache
