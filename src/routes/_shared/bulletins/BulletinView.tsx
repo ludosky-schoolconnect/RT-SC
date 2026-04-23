@@ -21,7 +21,8 @@ import type {
   BulletinPeriodView,
 } from '@/lib/bulletinView'
 import type { EnrichedBulletinPeriodView } from '@/lib/bulletinEnrichment'
-import { statutLabel } from '@/lib/statutLabel'
+import { nextClasseLabel } from '@/lib/benin'
+import type { Niveau } from '@/types/models'
 import { cn } from '@/lib/cn'
 
 interface BulletinViewProps {
@@ -606,28 +607,46 @@ function AnnualBody({ view }: { view: BulletinAnnualView }) {
         </table>
       </div>
 
-      {/* Statut tile */}
-      <div className="mt-4 flex justify-center">
-        <div
-          className={cn(
-            'inline-flex items-center gap-2 rounded-md border-2 px-4 py-2',
-            view.statutAnnuel === 'Admis'
-              ? 'bg-success-bg border-success text-success'
-              : 'bg-danger-bg border-danger text-danger'
-          )}
-        >
-          <Award className="h-5 w-5" aria-hidden />
-          <p className="font-bold text-base uppercase tracking-wider">
-            {statutLabel(
-              view.statutAnnuel,
+      {/* Statut tile — Session 5.2.
+          Omitted entirely for Terminale: this system is school-internal
+          and does NOT see BAC results, so claiming admis/échoué for
+          Terminale would be misleading (a student can pass the BAC
+          with sub-10 moyenne or fail the BAC with > 10 moyenne).
+          For other niveaux:
+            Admis  → 'Admise en 5ème' / 'Admis en Tle' (niveau-only)
+            Échoué → 'Autorisée à redoubler la 2nde' (niveau-only,
+                     no série, no salle; 'redoubler la' not 'en la')
+      */}
+      {view.classe.niveau !== 'Terminale' && (
+        <div className="mt-4 flex justify-center">
+          {(() => {
+            const genre =
               view.eleve.genre === 'M' || view.eleve.genre === 'F'
                 ? view.eleve.genre
                 : null
-            )}{' '}
-            en classe supérieure
-          </p>
+            const e = genre === 'F' ? 'e' : ''
+            const sentence =
+              view.statutAnnuel === 'Admis'
+                ? `Admis${e} en ${nextClasseLabel(view.classe.niveau as Niveau)}`
+                : `Autorisé${e} à redoubler la ${view.classe.niveau}`
+            return (
+              <div
+                className={cn(
+                  'inline-flex items-center gap-2 rounded-md border-2 px-4 py-2',
+                  view.statutAnnuel === 'Admis'
+                    ? 'bg-success-bg border-success text-success'
+                    : 'bg-danger-bg border-danger text-danger'
+                )}
+              >
+                <Award className="h-5 w-5" aria-hidden />
+                <p className="font-bold text-base uppercase tracking-wider">
+                  {sentence}
+                </p>
+              </div>
+            )
+          })()}
         </div>
-      </div>
+      )}
 
       {/* Session 5 — observations annuelles + décision du conseil annuel.
           Same display component as the period body uses. Only renders

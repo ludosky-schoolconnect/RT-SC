@@ -72,9 +72,11 @@ export const NEXT_NIVEAU: Partial<Record<Niveau, Niveau>> = {
  * to "Tle"; the série follows them automatically so re-stating it in
  * the verdict line is redundant).
  *
- * Falls back to the string "classe supérieure" when no successor
- * exists (Terminale), since the bulletin verdict still needs to read
- * as a complete sentence even for diplôme-terminal students.
+ * The "classe supérieure" fallback is now defensive only: as of
+ * Session 5.2, both the on-screen view and the PDF skip rendering the
+ * verdict line entirely for Terminale students (school system has no
+ * BAC visibility). So this fallback should never fire in normal use,
+ * but stays in place to avoid an empty string in any future caller.
  */
 export function nextClasseLabel(niveau: Niveau): string {
   const next = NEXT_NIVEAU[niveau]

@@ -747,19 +747,27 @@ function drawAnnualVerdictLine(
   view: BulletinAnnualView,
   yStart: number
 ): number {
-  // Session 3.1 — write one verdict sentence using the system's own
-  // computed `statutAnnuel`. The reference bulletins rendered three
-  // checkboxes because the teacher circled one by hand; we know the
-  // answer, so we state it. This also keeps the PDF honest — if the
-  // sentence is wrong the problem is the moyenne, not the bulletin.
+  // Session 5.2 — write one verdict sentence using the system's own
+  // computed `statutAnnuel`, but ONLY for non-Terminale niveaux.
   //
-  //   Admis  → "Admise en 1ère" / "Admis en 5ème" / "Admise en classe supérieure"
-  //   Échoué → "Autorisée à redoubler en 2nde C1" / "Autorisé à redoubler en 6ème M2"
+  // Terminale is special: this system is school-internal and does not
+  // see BAC results. Saying "Admise" or "Échouée" for Terminale would
+  // be misleading because school moyenne >= 10 doesn't guarantee a
+  // BAC pass (and < 10 doesn't guarantee a fail). Omit the verdict
+  // entirely for Tle and let the BAC speak for itself.
   //
-  // We preserve the série only for the redoubler case because the
-  // student stays in the same exact class; for promotion we keep it to
-  // the niveau alone (the série follows automatically through
-  // second-cycle years).
+  // For other niveaux:
+  //   Admis  → "Admise en 5ème" / "Admis en Tle" (niveau-only,
+  //            série not repeated — it follows the student through
+  //            second-cycle years anyway)
+  //   Échoué → "Autorisée à redoubler la 2nde" / "Autorisé à
+  //            redoubler la 6ème" (niveau-only, no série, no salle;
+  //            "redoubler la" is correct grammar — "redoubler en la"
+  //            is wrong, the verb is transitive on the class noun).
+  if (view.classe.niveau === 'Terminale') {
+    return yStart // skip entirely; BAC will determine the outcome
+  }
+
   const y = yStart + 2
   const genre = view.eleve.genre === 'M' || view.eleve.genre === 'F' ? view.eleve.genre : null
   const e = genre === 'F' ? 'e' : '' // feminine "e" suffix on past participles
@@ -769,10 +777,7 @@ function drawAnnualVerdictLine(
     const nextLabel = nextClasseLabel(view.classe.niveau as Niveau)
     sentence = `Admis${e} en ${nextLabel}`
   } else {
-    // Échoué → redoubler the SAME class they just finished. Full
-    // class name (niveau + série + salle) gives the family the
-    // unambiguous label they'll see on the new year's roster.
-    sentence = `Autorisé${e} à redoubler en ${view.classe.nomComplet}`
+    sentence = `Autorisé${e} à redoubler la ${view.classe.niveau}`
   }
 
   doc.setFont('helvetica', 'bold')
