@@ -12,6 +12,13 @@
  * scan) has been removed. Blaze must be active for signup to work;
  * the Firestore rule on eleves collection group is isStaff()-only,
  * so the old fallback path would fail the rule anyway.
+ *
+ * Session F1 — when the callable is unavailable (functions/not-found,
+ * functions/unavailable, functions/internal — pre-Blaze), the error
+ * message now specifically explains the situation and instructs the
+ * student to get their code from the administration directly. No
+ * client-side fallback is possible because the eleves collectionGroup
+ * read rule requires isStaff() authentication.
  */
 
 import { useState } from 'react'
@@ -110,6 +117,18 @@ export default function EleveSignup() {
         setError('Trop de tentatives. Réessayez dans quelques minutes.')
       } else if (errCode === 'functions/invalid-argument') {
         setError('Données incomplètes. Vérifiez votre saisie.')
+      } else if (
+        errCode === 'functions/not-found' ||
+        errCode === 'functions/unavailable' ||
+        errCode === 'functions/internal'
+      ) {
+        // Blaze not active — no client-side fallback possible (eleves
+        // collectionGroup requires isStaff() auth). Instruct student
+        // to get their code from admin directly.
+        setError(
+          "La récupération de code n'est pas encore disponible (service Blaze requis). " +
+          "Demandez votre code de classe directement à votre administration."
+        )
       } else {
         console.error('[EleveSignup] verification error:', err)
         setError("Erreur de vérification. Vérifiez votre internet ou réessayez plus tard.")

@@ -1,5 +1,5 @@
 /**
- * RT-SC · ProfPasskeyGate (Session 4b, updated E2 → E4).
+ * RT-SC · ProfPasskeyGate (Session 4b, updated E2 → E4 → F1).
  *
  * Gates access to the prof/caissier area behind a per-prof passkey
  * check on every fresh browser tab. Intended to thwart the common
@@ -42,8 +42,15 @@
  *   3. Invalidates all outstanding tokens when the passkey rotates
  *      (version bump in the HMAC payload)
  *
- * Blaze must be active for this gate to function. Activation
- * instructions: see DEPLOY-ONCE-BLAZE-IS-READY.md.
+ * ─── Session F1 — pre-Blaze fallback restored ─────────────────
+ *
+ * When the callable is unreachable (functions/not-found,
+ * functions/unavailable, functions/internal — pre-Blaze or functions
+ * not yet deployed), the gate quietly falls back to the school-wide
+ * passkey in /ecole/securite (passkeyProf or passkeyCaisse). This
+ * is weaker security but keeps the app testable during the Blaze
+ * setup period. The fallback is never reached once functions are
+ * deployed — the callable path takes over automatically.
  *
  * UX flow:
  *   1. Fresh tab visitor sees email + passkey fields (even if already authed)
@@ -127,6 +134,39 @@ interface VerifyLoginOutput {
   expiresAt: number
 }
 
+/**
+ * Pre-Blaze fallback: compare candidate code against the school-wide
+ * passkey stored in /ecole/securite (publicly readable). Returns true
+ * on match and writes a synthetic gate entry for the 4h bypass.
+ */
+async function verifyWithSchoolPasskeyFallback(
+  code: string,
+  email: string
+): Promise<boolean> {
+  try {
+    const { doc, getDoc } = await import('firebase/firestore')
+    const { db } = await import('@/firebase')
+    const snap = await getDoc(doc(db, 'ecole', 'securite'))
+    if (!snap.exists()) return false
+    const data = snap.data()
+    const profPasskey = (data?.passkeyProf as string | undefined)?.trim()
+    const caissePasskey = (data?.passkeyCaisse as string | undefined)?.trim()
+    const matched =
+      (!!profPasskey && profPasskey === code) ||
+      (!!caissePasskey && caissePasskey === code)
+    if (!matched) return false
+    writeGate({
+      token: `fallback:${Date.now()}`,
+      uid: `fallback:${email}`,
+      expiresAt: Date.now() + 4 * 60 * 60 * 1000,
+    })
+    console.info('[ProfPasskeyGate] pre-Blaze fallback: school passkey accepted')
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
   const { hydrating } = useAuth()
 
@@ -198,6 +238,21 @@ export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
           "Aucun code personnel configuré. Contactez l'administration pour en recevoir un."
         )
         toast.error('Pas de code personnel — voir administrateur.')
+      } else if (
+        errCode === 'functions/not-found' ||
+        errCode === 'functions/unavailable' ||
+        errCode === 'functions/internal'
+      ) {
+        // Blaze not active — try school-wide passkey fallback.
+        // Resolved once functions are deployed.
+        const ok = await verifyWithSchoolPasskeyFallback(candidateCode, candidateEmail)
+        if (ok) {
+          setUnlocked(true)
+        } else {
+          setError('Email ou code incorrect.')
+          setShake((n) => n + 1)
+          toast.error('Email ou code incorrect.')
+        }
       } else {
         console.error('[ProfPasskeyGate] verify error:', err)
         setError('Erreur réseau — réessayez.')

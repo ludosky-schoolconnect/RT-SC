@@ -12,6 +12,12 @@
  * Session E4 — the pre-Blaze fallback has been removed. Blaze must
  * be active; the eleves collectionGroup read rule is isStaff()-only
  * so no client-side scan is possible anyway.
+ *
+ * Session F1 — when the callable is unavailable (functions/not-found,
+ * functions/unavailable, functions/internal — pre-Blaze), the error
+ * message now specifically guides the parent to contact administration.
+ * No client-side fallback is possible because the eleves collectionGroup
+ * read rule requires isStaff() authentication.
  */
 
 import { useState } from 'react'
@@ -158,6 +164,17 @@ export default function ParentLogin() {
         setError('Trop de tentatives. Réessayez dans quelques minutes.')
       } else if (errCode === 'functions/invalid-argument') {
         setError('Format de code invalide.')
+      } else if (
+        errCode === 'functions/not-found' ||
+        errCode === 'functions/unavailable' ||
+        errCode === 'functions/internal'
+      ) {
+        // Blaze not active — no client-side fallback possible (eleves
+        // collectionGroup requires isStaff() auth). Guide parent to admin.
+        setError(
+          "Le service de vérification n'est pas encore actif (Blaze requis). " +
+          "Contactez directement l'administration pour obtenir votre code parent."
+        )
       } else {
         console.error('[ParentLogin] error:', err)
         setError('Erreur réseau. Réessayez.')

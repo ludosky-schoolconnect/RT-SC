@@ -1,5 +1,5 @@
 /**
- * RT-SC · MonProfilSection (Session 5, updated in Session E2).
+ * RT-SC · MonProfilSection (Session 5, updated in Session E2, F1).
  *
  * Two self-service cards for the prof's own account:
  *
@@ -13,9 +13,10 @@
  *      invalidates any outstanding HMAC tokens → every other session
  *      logs out). The new code is shown once in a modal + emailed.
  *
- *      Dormant pre-Blaze: the callable returns functions/not-found
- *      and we surface a toast explaining that per-prof passkeys
- *      activate alongside the server migration. No break.
+ *      Session F1 — when the callable is unavailable (functions/not-found,
+ *      functions/unavailable, functions/internal — pre-Blaze), the toast
+ *      now specifically explains that Blaze is required and instructs the
+ *      prof to ask admin for a manual code assignment. No silent failure.
  */
 
 import { useMemo, useRef, useState } from 'react'
@@ -117,6 +118,16 @@ export function MonProfilSection() {
         toast.error('Session expirée — reconnectez-vous.')
       } else if (code === 'functions/resource-exhausted') {
         toast.error('Trop de régénérations récentes — patientez quelques minutes.')
+      } else if (
+        code === 'functions/not-found' ||
+        code === 'functions/unavailable' ||
+        code === 'functions/internal'
+      ) {
+        // Blaze not active — loginPasskey is admin-SDK-only, no client fallback.
+        toast.error(
+          'Régénération indisponible avant activation Blaze. ' +
+          "Demandez à votre administrateur d'attribuer un code via le tableau de bord."
+        )
       } else {
         console.error('[MonProfilSection] regenerate error:', err)
         toast.error('Régénération impossible. Réessayez.')

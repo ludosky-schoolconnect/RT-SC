@@ -508,10 +508,14 @@ export function useUpdateOwnProfSignature() {
  * besides the admin's own screen).
  *
  * Error codes to surface:
- *   - functions/not-found | unavailable → Blaze not deployed yet
+ *   - functions/not-found | unavailable | internal → Blaze not deployed yet
  *   - functions/permission-denied → caller isn't admin
  *   - functions/failed-precondition → target prof not actif
  *   - functions/resource-exhausted → 20/15min admin rate limit hit
+ *
+ * Session F1 — Blaze-unavailable errors are caught in the mutationFn and
+ * re-thrown as plain Error with a French message so the UI (migration batch
+ * or per-row action) can surface it without special-casing FunctionsError.
  */
 export interface RegeneratePasskeyForProfInput {
   profId: string
@@ -537,8 +541,23 @@ export function useRegeneratePasskeyForProf() {
         RegeneratePasskeyForProfInput,
         RegeneratePasskeyForProfOutput
       >(functions, 'regeneratePasskeyForProf')
-      const res = await call(input)
-      return res.data
+      try {
+        const res = await call(input)
+        return res.data
+      } catch (err) {
+        const errCode = (err as { code?: string })?.code
+        if (
+          errCode === 'functions/not-found' ||
+          errCode === 'functions/unavailable' ||
+          errCode === 'functions/internal'
+        ) {
+          throw new Error(
+            'Génération de code impossible avant activation Blaze. ' +
+            'Déployez les Cloud Functions puis réessayez.'
+          )
+        }
+        throw err
+      }
     },
     onSuccess: () => {
       // Refresh the profs list so the UI reflects the new passkey
