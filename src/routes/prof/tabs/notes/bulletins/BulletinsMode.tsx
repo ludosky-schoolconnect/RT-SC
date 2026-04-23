@@ -235,6 +235,15 @@ function PeriodeMode() {
     for (const e of eleves) {
       qc.invalidateQueries({ queryKey: ['bulletins', classeId, e.id] })
     }
+    // Session 7.1 — also invalidate the AnnualMode query that lists
+    // every bulletin for the class. Without this, switching from
+    // BulletinsMode to AnnualMode after generating a period's
+    // bulletins shows stale "missing" status for up to 30s (the
+    // staleTime on that query). The invalidation marks the cache
+    // dirty without itself fetching; the actual refetch only happens
+    // when AnnualMode is mounted and observes the query, so we don't
+    // pay any read cost when the user doesn't visit AnnualMode.
+    qc.invalidateQueries({ queryKey: ['all-bulletins-class', classeId] })
   }
 
   const generatedCount = Object.keys(bulletinByEleve).length
@@ -358,6 +367,8 @@ function PeriodeMode() {
       for (const e of eleves) {
         qc.invalidateQueries({ queryKey: ['bulletins', classeId, e.id] })
       }
+      // Session 7.1 — same as onGenerated, keep AnnualMode aware.
+      qc.invalidateQueries({ queryKey: ['all-bulletins-class', classeId] })
     } catch (err) {
       console.error('[unlockBulletins] failed:', err)
       toast.error('Échec de la suppression.')
