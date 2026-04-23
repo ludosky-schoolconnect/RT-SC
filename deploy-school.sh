@@ -260,7 +260,19 @@ if [[ "$MODE" != "rules" ]]; then
     # Shorter name for the home-screen label — Android truncates past
     # ~12 chars, iOS past ~14. Keep the full school name in `name`,
     # use a compact version for `short_name`.
-    SHORT_NAME=$(echo "$SCHOOL_NAME" | cut -c 1-14)
+    #
+    # We slice by UTF-8 CHARACTERS (not bytes) so accented French
+    # names — "Collège", "Houéto", etc. — aren't cut mid-multibyte,
+    # which would emit invalid JSON and cause Chrome to silently
+    # reject the manifest (no install banner, no error visible to
+    # the user). `python3 -c` handles this natively since Python
+    # strings are Unicode. Falls back to cut -c if python isn't
+    # available for some reason (unlikely on Termux).
+    if command -v python3 >/dev/null 2>&1; then
+      SHORT_NAME=$(python3 -c "import sys; print(sys.argv[1][:14])" "$SCHOOL_NAME")
+    else
+      SHORT_NAME=$(echo "$SCHOOL_NAME" | cut -c 1-14)
+    fi
     cat > "$MANIFEST_PATH" <<EOF
 {
   "name": "$SCHOOL_NAME — SchoolConnect",
@@ -297,6 +309,12 @@ if [[ "$MODE" != "rules" ]]; then
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "/favicon.svg",
