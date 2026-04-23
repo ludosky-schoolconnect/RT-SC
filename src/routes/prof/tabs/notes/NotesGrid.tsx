@@ -290,29 +290,72 @@ export function NotesGrid({ classeId, matiere, periode }: NotesGridProps) {
     [eleves, rows]
   )
 
-  // ─── Baromètre + per-matière rank (from SAVED data, not local edits) ─
-  // Only meaningful when at least some élèves have a closed, non-null moyenne.
-  // Computed off `notesData` (the actual Firestore-saved view), so they
-  // don't shift around as the prof types — they only update on autosave.
-
+  // ─── Baromètre + per-matière rank ───────────────────────────
+  // Session 7 — uses BOTH the Firestore snapshot view (notesData) AND
+  // the local rows state. This is read-free: we never fetch anything
+  // extra, we just trust the optimistic update from the closure flow.
+  //
+  // Background: closing a matière writes N notes via setDoc, which
+  // updates the Firestore local cache synchronously. The onSnapshot
+  // listener should fire immediately after each write. In practice
+  // there can be a perceptible delay (mobile, LTE, tab backgrounded)
+  // before useQuery subscribers re-render with the updated cache.
+  // During that window, the user saw the "Clôturé" badge appear (from
+  // the optimistic rows update on line ~263) but the Baromètre stayed
+  // missing because closedSavedNotes only read from notesData.
+  //
+  // The fix: when a row is locally marked estCloture=true AND has the
+  // raw inputs to compute a moyenne, treat it as "closed" for stat
+  // purposes immediately. The snapshot will eventually catch up; when
+  // it does, the saved note's moyenne supersedes the locally-computed
+  // one (saved notes win in the de-dup map). Net result: instant
+  // Baromètre, eventually consistent, zero extra reads.
   const closedSavedNotes = useMemo(() => {
-    return notesData
-      .map((nd) => {
-        const eleve = eleves.find((e) => e.id === nd.eleveId)
-        if (!eleve) return null
-        const note = nd.note
-        if (note.estCloture !== true) return null
-        if (note.abandonne === true) return null
-        if (
-          note.moyenneMatiere === null ||
-          note.moyenneMatiere === undefined ||
-          isNaN(note.moyenneMatiere)
-        )
-          return null
-        return { eleve, moy: note.moyenneMatiere }
+    // Index by eleveId, "saved" entries from notesData take priority.
+    const out = new Map<string, { eleve: Eleve; moy: number }>()
+
+    // Pass 1: locally-closed rows. Computed inline from the row's
+    // interros + devoirs using the same formulas as the engine. Only
+    // included when the local row is closed AND has a valid moyenne.
+    for (const e of eleves) {
+      const r = rows[e.id]
+      if (!r || r.estCloture !== true) continue
+      const cleanInterros = r.interros.filter((v): v is number => v !== null)
+      const mi = computeMI(cleanInterros)
+      const mm = computeMM({
+        moyenneInterros: mi,
+        devoir1: r.devoir1,
+        devoir2: r.devoir2,
       })
-      .filter((x): x is { eleve: Eleve; moy: number } => x !== null)
-  }, [notesData, eleves])
+      if (mm === null || isNaN(mm)) continue
+      out.set(e.id, { eleve: e, moy: mm })
+    }
+
+    // Pass 2: snapshot-saved closed notes. Overwrites Pass 1 entries
+    // when present — the saved moyenne is authoritative because it's
+    // what bulletins will pull from.
+    for (const nd of notesData) {
+      const eleve = eleves.find((e) => e.id === nd.eleveId)
+      if (!eleve) continue
+      const note = nd.note
+      if (note.estCloture !== true) continue
+      if (note.abandonne === true) {
+        // Explicitly drop abandonné — they shouldn't drag the average
+        // even if Pass 1 added them (race window).
+        out.delete(nd.eleveId)
+        continue
+      }
+      if (
+        note.moyenneMatiere === null ||
+        note.moyenneMatiere === undefined ||
+        isNaN(note.moyenneMatiere)
+      )
+        continue
+      out.set(nd.eleveId, { eleve, moy: note.moyenneMatiere })
+    }
+
+    return Array.from(out.values())
+  }, [notesData, eleves, rows])
 
   const barometre = useMemo(() => {
     if (closedSavedNotes.length === 0) return null

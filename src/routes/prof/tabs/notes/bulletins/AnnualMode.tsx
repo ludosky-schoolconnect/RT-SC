@@ -11,7 +11,7 @@
  * bulletin doc state if it exists.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -64,14 +64,11 @@ export function AnnualMode() {
     [ppClasses, classeId]
   )
 
-  // Auto-default class
-  useEffect(() => {
-    if (!classeId && ppClasses.length === 1) {
-      const next = new URLSearchParams(searchParams)
-      next.set('classe', ppClasses[0].id)
-      setSearchParams(next, { replace: true })
-    }
-  }, [classeId, ppClasses, searchParams, setSearchParams])
+  // Session 7 — previously auto-selected the only class when a prof
+  // was PP of exactly one. Removed because the auto-default surprised
+  // profs who expected to start on "Choisir une classe" and pick
+  // explicitly. Letting the user always pick avoids accidental writes
+  // when they thought they were on a different surface.
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams)
@@ -246,7 +243,7 @@ export function AnnualMode() {
           value={classeId}
           onChange={(e) => setParam('classe', e.target.value)}
         >
-          <option value="">— Choisir —</option>
+          <option value="">— Choisir une classe —</option>
           {ppClasses.map((c) => (
             <option key={c.id} value={c.id}>
               {nomClasse(c)}
