@@ -92,11 +92,11 @@ export function PwaInstallBanner() {
     <AnimatePresence>
       {visible && (
         <motion.div
-          initial={{ y: 100, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 100, opacity: 0 }}
+          initial={{ y: 100, opacity: 0, x: '-50%' }}
+          animate={{ y: 0, opacity: 1, x: '-50%' }}
+          exit={{ y: 100, opacity: 0, x: '-50%' }}
           transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10000] w-[min(360px,calc(100vw-1rem))]"
+          className="fixed bottom-4 left-1/2 z-[10000] w-[min(360px,calc(100vw-2rem))]"
           role="dialog"
           aria-label="Proposition d'installation de l'application"
         >
