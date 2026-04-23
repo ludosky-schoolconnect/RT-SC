@@ -113,6 +113,17 @@ export function clearGateUnlock(): void {
   }
 }
 
+/**
+ * Returns true if the current tab's sessionStorage holds a valid
+ * (unexpired) personal-code unlock. Used by PersonnelCodeGate to
+ * decide whether to challenge for the code on a fresh tab.
+ *
+ * Cheap synchronous check — safe to call on every render.
+ */
+export function hasValidUnlock(): boolean {
+  return readGate() !== null
+}
+
 export type PasskeyVerifyResult =
   | { ok: true; skipped: boolean }
   | { ok: false; reason: 'invalid' | 'rate-limited' | 'not-configured' | 'inactive' | 'network' }

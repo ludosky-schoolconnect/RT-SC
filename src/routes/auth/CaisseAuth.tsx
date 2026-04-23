@@ -161,6 +161,7 @@ function CaisseLoginForm() {
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [showPwd, setShowPwd] = useState(false)
+  const [showCode, setShowCode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [codeError, setCodeError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -245,8 +246,8 @@ function CaisseLoginForm() {
       />
       <Input
         label="Code d'accès personnel"
-        type="text"
-        placeholder="123456"
+        type={showCode ? 'text' : 'password'}
+        placeholder="••••••"
         value={code}
         onChange={(e) => {
           setCode(e.target.value)
@@ -256,6 +257,17 @@ function CaisseLoginForm() {
         autoComplete="one-time-code"
         maxLength={12}
         leading={<KeyRound className="h-4 w-4" />}
+        trailing={
+          <IconButton
+            aria-label={showCode ? 'Masquer' : 'Afficher'}
+            onClick={() => setShowCode((v) => !v)}
+            variant="ghost"
+            className="h-8 w-8"
+            type="button"
+          >
+            {showCode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </IconButton>
+        }
         error={codeError ?? undefined}
         hint="Code à 6 chiffres communiqué par l'administration."
       />
