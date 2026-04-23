@@ -185,15 +185,23 @@ export function BulletinObservationsEditor({
           ))}
         </Select>
 
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <div className="flex items-center gap-2">
-            <MessageSquareText className="h-3.5 w-3.5 text-ink-400 shrink-0" aria-hidden />
+        {/* Action row.
+            Session 6 fix — used to be a single horizontal flex with
+            help-text on the left and buttons on the right. On narrow
+            phone screens the help-text would overflow and squeeze
+            "Enregistrer" past the modal's right edge. Now: help-text
+            on its own row first, buttons in their own right-aligned
+            row below. Always-visible "Enregistrer" regardless of
+            screen width or text wrapping. */}
+        <div className="pt-1 space-y-2">
+          <div className="flex items-start gap-2">
+            <MessageSquareText className="h-3.5 w-3.5 text-ink-400 shrink-0 mt-0.5" aria-hidden />
             <p className="text-[0.7rem] text-ink-500 leading-snug">
               Les modifications sont sauvegardées séparément des notes du
               bulletin.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2">
             {isDirty && (
               <Button
                 variant="ghost"

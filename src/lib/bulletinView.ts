@@ -86,7 +86,7 @@ export interface BulletinPeriodView {
   coeffConduite: number
 
   /* Verdict */
-  mention: 'Excellent' | 'Très bien' | 'Bien' | 'Passable' | 'Insuffisant'
+  mention: 'Excellent' | 'Très bien' | 'Bien' | 'Assez bien' | 'Passable' | 'Insuffisant'
   estVerrouille: boolean
   dateCalcul: string  // ISO
 
@@ -345,10 +345,29 @@ export function assembleBulletinAnnualView(
 
 // ─── Helpers ─────────────────────────────────────────────────
 
+/**
+ * Maps a moyenne to the official Béninois 6-band scale.
+ *
+ * Session 6 fix: previously used a shifted 5-band scale (no "Assez
+ * bien", with everything one band higher) which caused 14/20 to read
+ * as "Très bien" — too generous compared to the per-matière
+ * `appreciationFor` ladder which followed the official scale. Both
+ * helpers now use identical thresholds; only the column they fill
+ * (mention = whole-bulletin, appreciation = per-matière) differs.
+ *
+ * Thresholds:
+ *   ≥18 → Excellent
+ *   ≥16 → Très bien
+ *   ≥14 → Bien
+ *   ≥12 → Assez bien
+ *   ≥10 → Passable
+ *   else → Insuffisant
+ */
 export function mentionFor(moyenne: number): BulletinPeriodView['mention'] {
-  if (moyenne >= 16) return 'Excellent'
-  if (moyenne >= 14) return 'Très bien'
-  if (moyenne >= 12) return 'Bien'
+  if (moyenne >= 18) return 'Excellent'
+  if (moyenne >= 16) return 'Très bien'
+  if (moyenne >= 14) return 'Bien'
+  if (moyenne >= 12) return 'Assez bien'
   if (moyenne >= 10) return 'Passable'
   return 'Insuffisant'
 }

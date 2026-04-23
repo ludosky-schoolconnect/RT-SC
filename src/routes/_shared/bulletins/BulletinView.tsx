@@ -743,14 +743,18 @@ function VerdictTile({
 }
 
 function mentionTone(m: BulletinPeriodView['mention']): 'success' | 'danger' | 'navy' | 'gold' {
+  // Session 6 — 6-band tone mapping. Top two = gold, middle two
+  // (Bien / Assez bien) = navy and success respectively, Passable
+  // stays navy, Insuffisant red.
   if (m === 'Excellent' || m === 'Très bien') return 'gold'
-  if (m === 'Bien' || m === 'Passable') return 'navy'
+  if (m === 'Bien') return 'success'
+  if (m === 'Assez bien' || m === 'Passable') return 'navy'
   return 'danger'
 }
 function mentionToneText(m: BulletinPeriodView['mention']): string {
   if (m === 'Excellent' || m === 'Très bien') return 'text-gold-dark'
   if (m === 'Bien') return 'text-success'
-  if (m === 'Passable') return 'text-navy'
+  if (m === 'Assez bien' || m === 'Passable') return 'text-navy'
   return 'text-danger'
 }
 

@@ -310,7 +310,8 @@ function drawPeriodBody(
         { content: row.matiere, styles: matiereCellBold },
         {
           content: 'Élève absent — matière non comptabilisée',
-          colSpan: 8,
+          // 10 columns total now (added Interros) → colSpan 9
+          colSpan: 9,
           styles: {
             fontStyle: 'italic',
             textColor: COLOR_INK_400,
@@ -325,8 +326,15 @@ function drawPeriodBody(
     body.push([
       { content: row.matiere, styles: matiereCellBold },
       { content: String(row.coefficient), styles: centerCell },
+      // Session 6 — Interros now have their own column. Just the
+      // raw values, joined by a thin separator. Prevents the M.I.
+      // cell from being a wrapping mess like "14.67\n(12·17)".
       {
-        content: formatMI(row.moyenneInterros, row.interros ?? []),
+        content: formatInterrosList(row.interros ?? []),
+        styles: { ...centerCell, fontSize: 7, textColor: COLOR_INK_500 },
+      },
+      {
+        content: fmt(row.moyenneInterros),
         styles: centerCell,
       },
       { content: fmt(row.devoir1), styles: centerCell },
@@ -357,6 +365,8 @@ function drawPeriodBody(
   }
 
   // Conduite row — sits inside the table just above TOTAUX.
+  // 10 columns: Discipline | Coef | Interros | M.I. | Dev1 | Dev2 |
+  //             Moy | Moy×Coef | Rang | Appréciation
   body.push([
     {
       content:
@@ -366,6 +376,8 @@ function drawPeriodBody(
       styles: { fontStyle: 'bold', textColor: COLOR_NAVY, fillColor: COLOR_CONDUITE_BG },
     },
     { content: String(view.coeffConduite), styles: { ...centerCell, fillColor: COLOR_CONDUITE_BG } },
+    // Empty cell for the new Interros column
+    { content: '', styles: { fillColor: COLOR_CONDUITE_BG } },
     {
       content: `Base ${view.baseConduite}`,
       colSpan: 3,
@@ -393,6 +405,8 @@ function drawPeriodBody(
       [
         { content: 'DISCIPLINES', styles: { halign: 'left' } },
         { content: 'Coef', styles: {} },
+        // Session 6 — new dedicated Interros column.
+        { content: 'Interros', styles: {} },
         { content: 'M.I.', styles: {} },
         { content: 'Dev 1', styles: {} },
         { content: 'Dev 2', styles: {} },
@@ -403,32 +417,6 @@ function drawPeriodBody(
       ],
     ],
     body,
-    foot: [[
-      { content: 'TOTAUX', styles: { fontStyle: 'bold', textColor: COLOR_NAVY } },
-      { content: String(view.totalCoeffs), styles: centerCell },
-      {
-        content: 'Moyenne générale',
-        colSpan: 3,
-        styles: { halign: 'right', textColor: COLOR_INK_700, fontSize: 8 },
-      },
-      {
-        content: view.moyenneGenerale.toFixed(2),
-        styles: {
-          halign: 'center',
-          fontStyle: 'bold',
-          textColor: view.moyenneGenerale >= 10 ? COLOR_SUCCESS : COLOR_DANGER,
-        },
-      },
-      {
-        content: view.totalPoints.toFixed(1),
-        styles: { halign: 'center', textColor: COLOR_NAVY, fontStyle: 'bold' },
-      },
-      {
-        content: view.rang ?? '—',
-        colSpan: 2,
-        styles: { halign: 'center', fontStyle: 'bold', textColor: COLOR_NAVY, fontSize: 8 },
-      },
-    ]],
     theme: 'grid',
     margin: { left: MARGIN_X, right: MARGIN_X },
     headStyles: {
@@ -440,31 +428,39 @@ function drawPeriodBody(
       cellPadding: 1.5,
     },
     bodyStyles: { fontSize: 8.5, cellPadding: 1.3, textColor: COLOR_INK_700, lineColor: COLOR_INK_400, lineWidth: 0.1 },
-    footStyles: {
-      fillColor: COLOR_GOLD_BG,
-      textColor: COLOR_NAVY,
-      fontSize: 9,
-      fontStyle: 'bold',
-      cellPadding: 1.5,
-    },
+    // Session 6.1 — TOTAUX is no longer a table footer row. Rendered
+    // separately as a standalone summary banner just below (see
+    // drawMoyenneSummary). Detaching it from the grid removes the
+    // ugly "extra row" feel that made the table look like it ran
+    // long, and matches the official Béninois bulletins where the
+    // moyenne is its own boxed line.
+    // 10 columns; trimmed widths to keep total within ~186mm usable.
+    // Sum of fixed widths = 127mm, remaining auto for Appréciation.
     columnStyles: {
-      0: { cellWidth: 34, halign: 'left' },
-      1: { cellWidth: 10 },
-      2: { cellWidth: 14 },
-      3: { cellWidth: 12 },
-      4: { cellWidth: 12 },
-      5: { cellWidth: 16 },
-      6: { cellWidth: 16 },
-      7: { cellWidth: 14 },
-      8: { cellWidth: 'auto', halign: 'left' },
+      0: { cellWidth: 30, halign: 'left' },   // Discipline
+      1: { cellWidth: 8 },                    // Coef
+      2: { cellWidth: 16 },                   // Interros
+      3: { cellWidth: 11 },                   // M.I.
+      4: { cellWidth: 11 },                   // Dev 1
+      5: { cellWidth: 11 },                   // Dev 2
+      6: { cellWidth: 14 },                   // Moy /20
+      7: { cellWidth: 14 },                   // Moy×Coef
+      8: { cellWidth: 12 },                   // Rang
+      9: { cellWidth: 'auto', halign: 'left' }, // Appréciation
     },
   })
 
-  let y = getLastY(doc) + 3
+  let y = getLastY(doc) + 4
 
-  // Moyenne en lettres (left) + Rang label already inside TOTAUX — here
-  // we show the "en toutes lettres" string that reference bulletins have
-  // underneath the moyenne.
+  // Session 6.1 — standalone moyenne summary banner. Replaces the
+  // gold tfoot row that used to crowd the bottom of the table. Shows
+  // three boxed cells horizontally: Total Coef · Total Points ·
+  // Moyenne /20, with Rang appended as a fourth slim cell. Mirrors
+  // the "récapitulatif" block on official Béninois bulletins.
+  y = drawMoyenneSummary(doc, view, y)
+
+  // Moyenne en lettres (left) — "en toutes lettres" string under the
+  // summary banner. Reference bulletins put it here, on its own line.
   if (enriched.moyenneGeneraleEnLettres) {
     doc.setFont('helvetica', 'italic')
     doc.setFontSize(8.5)
@@ -494,6 +490,67 @@ const centerCell = {
   halign: 'center' as const,
   fontSize: 8,
   textColor: COLOR_INK_700,
+}
+
+// ─── Moyenne summary banner (Session 6.1) ───────────────────
+
+/**
+ * Standalone "récapitulatif" banner drawn just below the matières
+ * table. Replaces the previous inline TOTAUX footer row that crowded
+ * the bottom of the table.
+ *
+ * Layout: four boxed cells horizontally
+ *   [TOTAL COEF: N]  [TOTAL POINTS: N]  [MOYENNE: N/20]  [RANG: N]
+ * with a thin gold border, light gold fill, and the moyenne value
+ * colored success/danger based on >= 10. Mirrors the boxed
+ * "Moyenne générale" line on official Béninois CEG bulletins.
+ */
+function drawMoyenneSummary(
+  doc: jsPDF,
+  view: BulletinPeriodView,
+  yStart: number
+): number {
+  const usableW = PAGE_WIDTH - MARGIN_X * 2
+  const cellH = 11
+  const cellGap = 2
+  // Four cells, equal width minus the three gaps between them.
+  const cellW = (usableW - cellGap * 3) / 4
+
+  type Cell = { label: string; value: string; valueColor?: [number, number, number] }
+  const cells: Cell[] = [
+    { label: 'TOTAL COEF', value: String(view.totalCoeffs) },
+    { label: 'TOTAL POINTS', value: view.totalPoints.toFixed(1) },
+    {
+      label: 'MOYENNE GÉNÉRALE',
+      value: view.moyenneGenerale.toFixed(2) + ' / 20',
+      valueColor: view.moyenneGenerale >= 10 ? COLOR_SUCCESS : COLOR_DANGER,
+    },
+    { label: 'RANG', value: view.rang ?? '—' },
+  ]
+
+  cells.forEach((cell, i) => {
+    const x = MARGIN_X + i * (cellW + cellGap)
+    // Box: light gold fill, gold border. Same palette as the décision
+    // pill so this banner reads as part of the "summary" family.
+    doc.setFillColor(...COLOR_GOLD_BG)
+    doc.setDrawColor(...COLOR_GOLD)
+    doc.setLineWidth(0.4)
+    doc.roundedRect(x, yStart, cellW, cellH, 1.5, 1.5, 'FD')
+
+    // Label — small uppercase navy at top
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6.5)
+    doc.setTextColor(...COLOR_NAVY)
+    doc.text(cell.label, x + cellW / 2, yStart + 4, { align: 'center' })
+
+    // Value — bigger, colored
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(...(cell.valueColor ?? COLOR_NAVY))
+    doc.text(cell.value, x + cellW / 2, yStart + 9, { align: 'center' })
+  })
+
+  return yStart + cellH + 4
 }
 
 // ─── Stats strip (discipline + class stats) ─────────────────
@@ -902,9 +959,12 @@ function drawIssuedLine(
 // ─── Small helpers ──────────────────────────────────────────
 
 function mentionRGB(m: string): [number, number, number] {
+  // Session 6 — 6-band color mapping, mirroring the on-screen
+  // mentionTone: top two gold, Bien green, Assez bien + Passable navy,
+  // Insuffisant red. Keeps PDF and on-screen renderings consistent.
   if (m === 'Excellent' || m === 'Très bien') return COLOR_GOLD
   if (m === 'Bien') return COLOR_SUCCESS
-  if (m === 'Passable') return COLOR_NAVY
+  if (m === 'Assez bien' || m === 'Passable') return COLOR_NAVY
   return COLOR_DANGER
 }
 
@@ -914,16 +974,19 @@ function fmt(n: number | null | undefined): string {
 }
 
 /**
- * Format M.I. with the raw interros below it on a second line in
- * parentheses. Like "12.50\n(15 · 10)".
+ * Format the raw interros list as a compact string for the dedicated
+ * Interros column. Returns "—" when empty so the cell isn't blank.
+ *
+ * Session 6.1 — uses pipe `|` as the separator. Matches the visual
+ * vocabulary of the surrounding table grid (sharp dividers between
+ * sub-values), instead of the `·` middle-dot which felt inconsistent
+ * with the other numeric cells.
  */
-function formatMI(mi: number | null, interros: number[]): string {
-  const main = fmt(mi)
-  if (interros.length === 0) return main
-  const list = interros
+function formatInterrosList(interros: number[]): string {
+  if (interros.length === 0) return '—'
+  return interros
     .map((v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)))
-    .join(' · ')
-  return `${main}\n(${list})`
+    .join(' | ')
 }
 
 function makeFilename(
