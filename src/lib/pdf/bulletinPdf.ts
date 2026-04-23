@@ -303,9 +303,19 @@ function drawPeriodBody(
 ): number {
   const enriched = view as EnrichedBulletinPeriodView
   const body: Row[] = []
+  // Session 6.2 — parallel array tracking which body row corresponds
+  // to which interros list. Indexed by body row position. Abandonné
+  // rows and the Conduite row carry an empty array (no sub-cells to
+  // draw). The didDrawCell hook below reads this to paint sub-cells
+  // inside the Interros column with proper auto-sized vertical
+  // dividers. Stored separately from the autoTable Row data because
+  // jspdf-autotable's typed RowInput doesn't accept arbitrary
+  // metadata cleanly.
+  const interrosByBodyIndex: number[][] = []
 
   for (const row of view.matieres) {
     if (row.abandonne) {
+      interrosByBodyIndex.push([])
       body.push([
         { content: row.matiere, styles: matiereCellBold },
         {
@@ -323,16 +333,16 @@ function drawPeriodBody(
       continue
     }
 
+    interrosByBodyIndex.push(row.interros ?? [])
     body.push([
       { content: row.matiere, styles: matiereCellBold },
       { content: String(row.coefficient), styles: centerCell },
-      // Session 6 — Interros now have their own column. Just the
-      // raw values, joined by a thin separator. Prevents the M.I.
-      // cell from being a wrapping mess like "14.67\n(12·17)".
-      {
-        content: formatInterrosList(row.interros ?? []),
-        styles: { ...centerCell, fontSize: 7, textColor: COLOR_INK_500 },
-      },
+      // Session 6.2 — Interros cell intentionally rendered as empty
+      // text. The actual sub-cells (one mini-cell per interro with
+      // vertical dividers) are painted manually in the autoTable
+      // didDrawCell hook below, so they auto-size to fill the
+      // column width regardless of how many interros there are.
+      { content: '', styles: { ...centerCell, fontSize: 7, textColor: COLOR_INK_500 } },
       {
         content: fmt(row.moyenneInterros),
         styles: centerCell,
@@ -367,6 +377,7 @@ function drawPeriodBody(
   // Conduite row — sits inside the table just above TOTAUX.
   // 10 columns: Discipline | Coef | Interros | M.I. | Dev1 | Dev2 |
   //             Moy | Moy×Coef | Rang | Appréciation
+  interrosByBodyIndex.push([])
   body.push([
     {
       content:
@@ -447,6 +458,20 @@ function drawPeriodBody(
       7: { cellWidth: 14 },                   // Moy×Coef
       8: { cellWidth: 12 },                   // Rang
       9: { cellWidth: 'auto', halign: 'left' }, // Appréciation
+    },
+    // Session 6.2 — paint Interros sub-cells manually after autoTable
+    // has rendered each cell. We hook column 2 (Interros) on body
+    // section only, look up the parallel interrosByBodyIndex array,
+    // and draw N evenly-spaced sub-cells with vertical dividers and
+    // a centered number in each. Sub-cells auto-size to fill the
+    // column width regardless of how many interros there are.
+    didDrawCell: (data) => {
+      if (data.section !== 'body') return
+      if (data.column.index !== 2) return
+      const rowIdx = data.row.index
+      const interros = interrosByBodyIndex[rowIdx]
+      if (!interros || interros.length === 0) return
+      drawInterrosSubCells(doc, data.cell, interros)
     },
   })
 
@@ -974,19 +999,55 @@ function fmt(n: number | null | undefined): string {
 }
 
 /**
- * Format the raw interros list as a compact string for the dedicated
- * Interros column. Returns "—" when empty so the cell isn't blank.
+ * Manually paint sub-cells inside the Interros column for one row.
+ * Called from autoTable's didDrawCell hook.
  *
- * Session 6.1 — uses pipe `|` as the separator. Matches the visual
- * vocabulary of the surrounding table grid (sharp dividers between
- * sub-values), instead of the `·` middle-dot which felt inconsistent
- * with the other numeric cells.
+ * Layout: the cell rect (data.cell.x/y/w/h) is divided into N equal
+ * vertical strips, one per interro value. Vertical dividers between
+ * strips, each value centered in its strip. Auto-sizes to the column
+ * width regardless of N.
+ *
+ * Why a dedicated helper instead of nested autoTable: jspdf-autotable
+ * doesn't support nested tables inside a cell, so we draw lines and
+ * text directly on the doc. The cell's outer border is already drawn
+ * by autoTable's grid theme, so we only draw INTERIOR dividers.
+ *
+ * Session 6.2 — replaces the joined-string approach (`12 | 17`) which
+ * looked flat next to the rest of the table grid.
  */
-function formatInterrosList(interros: number[]): string {
-  if (interros.length === 0) return '—'
-  return interros
-    .map((v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)))
-    .join(' | ')
+function drawInterrosSubCells(
+  doc: jsPDF,
+  cell: { x: number; y: number; width: number; height: number },
+  interros: number[]
+): void {
+  const n = interros.length
+  if (n === 0) return
+  const subW = cell.width / n
+
+  // Save font state — autoTable will reset it for the next cell, but
+  // we want our overrides scoped just to this paint.
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7)
+  doc.setTextColor(...COLOR_INK_500)
+  doc.setDrawColor(...COLOR_INK_400)
+  doc.setLineWidth(0.1)
+
+  for (let i = 0; i < n; i++) {
+    const x = cell.x + i * subW
+    // Interior divider between sub-cells (skip leftmost — outer
+    // border is already there).
+    if (i > 0) {
+      doc.line(x, cell.y, x, cell.y + cell.height)
+    }
+    // Centered value in this sub-cell. Vertical center via
+    // baseline-adjusted y. autoTable uses about 1/3 of cell height
+    // as text baseline offset; we approximate.
+    const v = interros[i]
+    const text = Number.isInteger(v) ? String(v) : v.toFixed(1)
+    doc.text(text, x + subW / 2, cell.y + cell.height / 2 + 1.5, {
+      align: 'center',
+    })
+  }
 }
 
 function makeFilename(
