@@ -185,7 +185,9 @@ function ArchivedSuccessCard({
           Les données de l'année précédente sont consultables dans <em>Archives</em> ci-dessous.
         </p>
         <p className="text-[0.72rem] text-ink-500 mt-2 italic">
-          La clôture redeviendra disponible à la fin de l'année en cours.
+          Ce message s'efface automatiquement après 7 jours. La clôture
+          reste techniquement disponible ensuite, mais à n'utiliser qu'à
+          la fin de l'année scolaire en cours.
         </p>
       </div>
     </div>
