@@ -1,12 +1,25 @@
 /**
  * RT-SC · ProfPasskeyGate (Session 4b, updated in Session E2).
  *
- * Gates the prof/caissier login page behind a passkey check. Intended
- * to thwart the most common realistic threat vector: a teacher's
- * child (studying at the same school) shoulder-surfing their parent's
- * login to reach the prof dashboard.
+ * Gates access to the prof/caissier area behind a passkey check on
+ * every fresh browser tab. Intended to thwart the common realistic
+ * threat vector: a teacher's phone or laptop being used by someone
+ * else (child at the same school, family member, borrowed device)
+ * while the Firebase Auth session is still valid. Firebase Auth
+ * persists for days/weeks via IndexedDB — the gate adds a
+ * per-tab "prove you're physically in control right now" challenge.
  *
- * ─── Two modes, chosen at runtime ──────────────────────────
+ * ─── IMPORTANT: gate applies to authenticated users too ────
+ *
+ * The gate does NOT auto-bypass when the user is already logged in.
+ * A fresh tab with a valid Firebase Auth session still prompts for
+ * the passkey. Only within the SAME tab is the prompt suppressed
+ * (via sessionStorage) for the 12-hour TTL. This is deliberate: if
+ * we skipped the challenge whenever Firebase Auth was valid, the
+ * gate would be useless against the actual "lost/shared device"
+ * threat model.
+ *
+ * ─── Two verification modes, chosen at runtime ──────────────
  *
  * **Post-Blaze (preferred)**: email + per-prof passkey, verified
  * server-side via the `verifyProfLogin` callable. The callable
@@ -21,17 +34,16 @@
  * working silently — no client redeploy needed beyond this commit.
  *
  * UX flow:
- *   1. Fresh visitor sees email + passkey fields
- *   2. Correct combination → gate unlocks + renders <ProfAuth />
+ *   1. Fresh tab visitor sees email + passkey fields (even if already authed)
+ *   2. Correct combination → gate unlocks + renders protected content
  *   3. Wrong → shake + generic error (no enumeration of registered emails)
  *
  * Persistence:
  *   On success, sessionStorage stores { token?, expiresAt, mode }
- *   scoped by projectId. Closed tab = re-arm. If the token is present
- *   and not expired, gate skips the prompt; if legacy mode, we skip
- *   based on the presence of the marker alone (legacy has no token).
+ *   scoped by projectId. Closed tab = re-arm. 12h TTL as a safety
+ *   floor even for long-running tabs.
  *
- * ─── Why keep the fallback ────────────────────────────────
+ * ─── Why keep the legacy fallback ────────────────────────
  *
  * Pre-Blaze, the only way through the gate is the school-wide passkey
  * (which is what today's production already uses). Removing it would
@@ -39,7 +51,7 @@
  * means zero-downtime rollout: deploy this client now, activate Blaze
  * whenever convenient. Post-Blaze, the legacy branch becomes dead
  * code — remove in a later cleanup session once the server path is
- * proven stable across all schools.
+ * proven stable.
  */
 
 import { useState } from 'react'
@@ -105,8 +117,7 @@ interface VerifyLoginOutput {
 }
 
 export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
-  const { profil, hydrating } = useAuth()
-  const alreadyAuthed = !!profil
+  const { hydrating } = useAuth()
 
   const [unlocked, setUnlocked] = useState<boolean>(() => readGate() !== null)
 
@@ -127,7 +138,18 @@ export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
     )
   }
 
-  if (alreadyAuthed || unlocked) {
+  // Session E2 (hardened) — the gate challenges on every fresh tab,
+  // INCLUDING authenticated users. This is deliberate: the threat
+  // model is "someone else has physical access to the prof's phone
+  // while the Firebase Auth session is still valid" (lost phone,
+  // family member, etc.). Auto-bypassing authenticated users would
+  // defeat the entire point of the gate.
+  //
+  // Within a single tab, once the gate is unlocked it stays unlocked
+  // until the tab closes or the 12h TTL expires — so a prof who just
+  // logged in isn't re-prompted on every route change. sessionStorage
+  // (not localStorage) ensures tab death re-arms the gate.
+  if (unlocked) {
     return <>{children}</>
   }
 
@@ -190,37 +212,23 @@ export function ProfPasskeyGate({ children }: ProfPasskeyGateProps) {
           if (
             errCode === 'functions/not-found' ||
             errCode === 'functions/unavailable' ||
-            errCode === 'not-found' ||
-            errCode === 'unavailable' ||
-            errCode === 'internal'
+            errCode === 'functions/internal'
           ) {
             // Blaze not deployed yet — fall through to legacy
-          } else if (
-            errCode === 'functions/unauthenticated' ||
-            errCode === 'unauthenticated'
-          ) {
+          } else if (errCode === 'functions/unauthenticated') {
             setError('Email ou code incorrect.')
             setShake((n) => n + 1)
             toast.error('Email ou code incorrect.')
             return
-          } else if (
-            errCode === 'functions/resource-exhausted' ||
-            errCode === 'resource-exhausted'
-          ) {
+          } else if (errCode === 'functions/resource-exhausted') {
             setError('Trop de tentatives. Réessayez dans quelques minutes.')
             toast.error('Trop de tentatives — patientez.')
             return
-          } else if (
-            errCode === 'functions/permission-denied' ||
-            errCode === 'permission-denied'
-          ) {
+          } else if (errCode === 'functions/permission-denied') {
             setError("Votre compte n'est pas actif.")
             toast.error("Compte inactif — contactez l'administration.")
             return
-          } else if (
-            errCode === 'functions/failed-precondition' ||
-            errCode === 'failed-precondition'
-          ) {
+          } else if (errCode === 'functions/failed-precondition') {
             // Active prof but no passkey — fall back to legacy
           } else {
             console.warn('[ProfPasskeyGate] callable error, falling back:', err)

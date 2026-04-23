@@ -42,12 +42,7 @@ interface RegenerateOutput {
 }
 
 function isFallbackCode(code: string | undefined): boolean {
-  return (
-    code === 'functions/not-found' ||
-    code === 'functions/unavailable' ||
-    code === 'not-found' ||
-    code === 'unavailable'
-  )
+  return code === 'functions/not-found' || code === 'functions/unavailable'
 }
 
 export function MonProfilSection() {
@@ -126,15 +121,9 @@ export function MonProfilSection() {
         toast.error(
           "Cette fonction n'est pas encore disponible. Contactez l'administration pour obtenir un nouveau code."
         )
-      } else if (
-        code === 'functions/unauthenticated' ||
-        code === 'unauthenticated'
-      ) {
+      } else if (code === 'functions/unauthenticated') {
         toast.error('Session expirée — reconnectez-vous.')
-      } else if (
-        code === 'functions/resource-exhausted' ||
-        code === 'resource-exhausted'
-      ) {
+      } else if (code === 'functions/resource-exhausted') {
         toast.error('Trop de régénérations récentes — patientez quelques minutes.')
       } else {
         console.error('[MonProfilSection] regenerate error:', err)

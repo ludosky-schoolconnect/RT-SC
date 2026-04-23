@@ -49,10 +49,7 @@ function isFallbackCode(code: string | undefined): boolean {
   return (
     code === 'functions/not-found' ||
     code === 'functions/unavailable' ||
-    code === 'functions/internal' ||
-    code === 'not-found' ||
-    code === 'unavailable' ||
-    code === 'internal'
+    code === 'functions/internal'
   )
 }
 
