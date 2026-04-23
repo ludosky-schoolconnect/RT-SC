@@ -25,45 +25,39 @@
  *                                       delete after verifying delivery)
  *
  *   Session C — Scheduled jobs + backups
- *     - dailyPresenceRollover       → replaces client-side useArchiveRollover.
- *                                     Runs 00:05 Africa/Porto-Novo, moves
- *                                     yesterday's presence docs to /archived_absences.
- *     - monthlyCivismePurge         → replaces the manual "Purger" button.
- *                                     Runs 01:00 on the 1st of each month,
+ *     - dailyPresenceRollover       → Runs 00:05, moves yesterday's
+ *                                     presence docs to /archived_absences.
+ *     - monthlyCivismePurge         → 01:00 on the 1st of each month,
  *                                     deletes terminal-state quêtes/réclamations
  *                                     older than 180 days.
- *     - weeklyStaleAbsencesCleanup  → replaces client-side useSchoolAbsences
- *                                     batch-delete. Sunday 02:30, removes
- *                                     declared absences older than 14 days
- *                                     from the live collection.
- *     - nightlyBackup               → 02:00 daily Firestore export to
- *                                     gs://<project>-backups/daily/<date>/
- *                                     Retention via GCS lifecycle rule (30 days).
- *     - yearlySnapshotOnRollover    → fires when admin finalizes year rollover.
- *                                     Exports to gs://<project>-backups/yearly/<annee>/
- *                                     (kept forever, no lifecycle rule on that path).
- *     - yearlySnapshotFallback      → scheduled Aug 31 at 03:00. If admin
- *                                     hasn't run rollover, triggers emergency
- *                                     snapshot + emails admin a nudge.
+ *     - weeklyStaleAbsencesCleanup  → Sunday 02:30, removes declared
+ *                                     absences older than 14 days.
+ *     - nightlyBackup               → 02:00 daily Firestore export.
+ *     - yearlySnapshotOnRollover    → fires on admin year rollover.
+ *     - yearlySnapshotFallback      → Aug 31 at 03:00 emergency fallback.
  *
  *   Session E1a — Prof security + orphan cleanup (foundation)
- *     - verifyProfLogin             → HTTPS callable for per-prof passkey
- *                                     verification. Returns 12h HMAC token
- *                                     on success. Rate-limited 5/15min.
- *     - onProfActivated             → fires when admin flips statut
- *                                     en_attente → actif. Generates login
- *                                     passkey + emails it to the prof.
- *     - onProfDeleteCascade         → cleans orphan refs on prof delete:
- *                                     matieresProfesseurs map, notes.professeurId,
- *                                     colles.donneParProfId.
- *     - onClasseDelete              → cleans class-level orphans: presences,
- *                                     publications, emploisDuTemps + seances,
- *                                     coefficients override doc.
+ *     - verifyProfLogin             → HTTPS callable: email+passkey → 12h HMAC token
+ *     - onProfActivated             → generates passkey + emails on en_attente→actif
+ *     - onProfDeleteCascade         → cleans matieresProfesseurs map, notes.professeurId,
+ *                                     colles.donneParProfId
+ *     - onClasseDelete              → cleans presences, publications, emploisDuTemps,
+ *                                     coefficients
+ *
+ *   Session E1b — Prof security + orphan cleanup (completion)
+ *     - onEleveDeleteCascade        → safety-net for éleve subcols + annuaire_parents
+ *                                     by eleveId + quete claims by eleveId
+ *     - onPreInscriptionDelete      → documents/* subcollection
+ *     - expireStalePasskeys         → weekly Sunday 03:00 — clears loginPasskey
+ *                                     for profs inactive 90+ days, emails nudge
+ *     - findEleveIdentity           → HTTPS callable replacing unauthenticated
+ *                                     collectionGroup(eleves) scans in EleveSignup
+ *                                     and ParentLogin
+ *     - regenerateOwnPasskey        → HTTPS callable: prof rotates their own
+ *                                     loginPasskey (used by Mon Profil in E2)
  *
  * Pending sessions:
- *   Session E1b — remaining orphan triggers (eleve cascade, pre-inscription,
- *                 annuaire parent, annale)
- *   Session E2 — client callables wiring (passkey gate, eleve/parent lookup)
+ *   Session E2 — client callables wiring (passkey gate, éleve/parent lookup)
  *   Session E3 — rules tightening + migration admin button
  *   Session D — Frontend cleanup (remove now-redundant client-side workarounds)
  *
@@ -92,3 +86,10 @@ export { verifyProfLogin } from './http/verifyProfLogin.js'
 export { onProfActivated } from './triggers/onProfActivated.js'
 export { onProfDeleteCascade } from './triggers/onProfDeleteCascade.js'
 export { onClasseDelete } from './triggers/onClasseDelete.js'
+
+// ── Session E1b
+export { onEleveDeleteCascade } from './triggers/onEleveDeleteCascade.js'
+export { onPreInscriptionDelete } from './triggers/onPreInscriptionDelete.js'
+export { expireStalePasskeys } from './scheduled/expireStalePasskeys.js'
+export { findEleveIdentity } from './http/findEleveIdentity.js'
+export { regenerateOwnPasskey } from './http/regenerateOwnPasskey.js'
