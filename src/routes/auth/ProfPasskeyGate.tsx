@@ -149,6 +149,7 @@ async function verifyWithSchoolPasskeyFallback(
     const snap = await getDoc(doc(db, 'ecole', 'securite'))
     if (!snap.exists()) return false
     const data = snap.data()
+    if (data.devFallbackEnabled === false) return false
     const profPasskey = (data?.passkeyProf as string | undefined)?.trim()
     const caissePasskey = (data?.passkeyCaisse as string | undefined)?.trim()
     const matched =

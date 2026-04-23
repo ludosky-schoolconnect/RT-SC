@@ -160,6 +160,10 @@ async function verifyWithSchoolPasskey(
     const snap = await getDoc(doc(db, 'ecole', 'securite'))
     if (!snap.exists()) return { ok: false, reason: 'not-configured' }
     const data = snap.data()
+    if (data.devFallbackEnabled === false) {
+      console.info('[profPasskey] pre-Blaze fallback disabled by SaaSMaster')
+      return { ok: false, reason: 'network' }
+    }
     const profPasskey = (data?.passkeyProf as string | undefined)?.trim()
     const caissePasskey = (data?.passkeyCaisse as string | undefined)?.trim()
     const matched =

@@ -28,6 +28,9 @@ import {
   Save,
   ShieldOff,
   Eraser,
+  FlaskConical,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import {
@@ -38,6 +41,7 @@ import {
   clearUnlockAlert,
   toggleManualLock,
 } from '@/lib/subscription'
+import { readDevFallbackEnabled, setDevFallbackEnabled } from '@/lib/devFallback'
 import { Input } from '@/ui/Input'
 import { Button } from '@/ui/Button'
 import { SectionCard } from '@/ui/SectionCard'
@@ -245,6 +249,33 @@ function CommandCenterInner({
       alert('Erreur. Réessayez.')
     } finally {
       setActionPending(null)
+    }
+  }
+
+  // ───── Dev fallback toggle ─────
+  const [fallbackEnabled, setFallbackEnabledState] = useState<boolean | null>(null)
+  const [fallbackPending, setFallbackPending] = useState(false)
+
+  useEffect(() => {
+    readDevFallbackEnabled(db).then(setFallbackEnabledState)
+  }, [db])
+
+  async function handleToggleFallback() {
+    if (fallbackEnabled === null) return
+    const next = !fallbackEnabled
+    const msg = next
+      ? 'Réactiver le fallback école (code école accepté si Blaze inactif) ?'
+      : 'Désactiver le fallback ? Le login prof nécessitera Blaze actif.'
+    if (!confirm(msg)) return
+    setFallbackPending(true)
+    try {
+      await setDevFallbackEnabled(db, next)
+      setFallbackEnabledState(next)
+    } catch (err) {
+      console.error('[CommandCenter] devFallback toggle failed:', err)
+      alert('Erreur. Réessayez.')
+    } finally {
+      setFallbackPending(false)
     }
   }
 
@@ -500,6 +531,41 @@ function CommandCenterInner({
           dans le futur, la nouvelle durée s'ajoute à partir de
           l'échéance ; sinon elle démarre aujourd'hui.
         </p>
+      </SectionCard>
+
+      {/* Dev fallback toggle */}
+      <SectionCard
+        title="Fallback pré-Blaze"
+        description="Quand actif, le code école sert de secours si les Cloud Functions ne sont pas déployées. Désactivez une fois Blaze en production."
+        icon={<FlaskConical />}
+        tone={fallbackEnabled === false ? 'default' : 'warning'}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {fallbackEnabled === null ? (
+              <span className="text-[0.78rem] text-ink-400">Chargement…</span>
+            ) : fallbackEnabled ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-warning-bg text-warning-dark border border-warning/30 px-2 py-1 text-[0.78rem] font-bold">
+                <ToggleRight className="h-3.5 w-3.5" aria-hidden />
+                Actif
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-ink-100 text-ink-600 border border-ink-200 px-2 py-1 text-[0.78rem] font-bold">
+                <ToggleLeft className="h-3.5 w-3.5" aria-hidden />
+                Désactivé
+              </span>
+            )}
+          </div>
+          <Button
+            variant={fallbackEnabled ? 'danger' : 'secondary'}
+            icon={fallbackEnabled ? <ToggleLeft /> : <ToggleRight />}
+            loading={fallbackPending}
+            disabled={fallbackEnabled === null || fallbackPending}
+            onClick={handleToggleFallback}
+          >
+            {fallbackEnabled ? 'Désactiver' : 'Réactiver'}
+          </Button>
+        </div>
       </SectionCard>
 
       {/* Manual lock toggle */}
