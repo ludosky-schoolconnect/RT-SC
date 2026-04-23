@@ -112,33 +112,38 @@ export const regenerateOwnPasskey = onCall(
 
     logger.info('regenerateOwnPasskey: rotated', { uid })
 
-    // Email the new code
+    // Email a NOTIFICATION (not the code itself) — see E4 security
+    // note: the code was just shown in the prof's own browser via the
+    // callable response, so they already have it. The email serves as
+    // a security audit trail ("if you didn't do this, tell admin")
+    // and a record of the rotation. Putting the code IN the email
+    // would create an unnecessary exposure path through shared Gmail
+    // or open phone notifications.
     if (isProbablyValidEmail(prof.email)) {
       const nom = prof.nom ?? 'professeur(e)'
       const body = `
-        ${H1('Votre nouveau code de connexion')}
+        ${H1('Votre code de connexion a été régénéré')}
         ${P(`Bonjour ${escapeHtml(nom)},`)}
-        ${P('Vous avez régénéré votre code de connexion personnel. Voici votre nouveau code :')}
-        ${StrongP(`<span style="font-family:monospace;letter-spacing:0.08em;color:#0B2545;background:#F7F1DE;padding:2px 8px;border-radius:4px;">${newPasskey}</span>`)}
-        ${P('Toutes vos sessions ouvertes (autre navigateur, autre appareil) ont été déconnectées. Vous devrez entrer ce nouveau code lors de votre prochaine connexion.')}
+        ${P('Vous avez régénéré votre code de connexion personnel depuis votre espace. Votre nouveau code vous a été affiché à ce moment-là.')}
+        ${StrongP('Toutes vos autres sessions ouvertes (autre navigateur, autre appareil) ont été déconnectées.')}
         ${P("Si vous n'avez pas demandé cette régénération, contactez immédiatement l'administration — un tiers a peut-être accès à votre compte.")}
       `
 
       const html = renderEmailShell({
         body,
-        preheader: `Nouveau code : ${newPasskey}`,
+        preheader: 'Votre code de connexion personnel a été régénéré depuis votre espace.',
         signature: 'SchoolConnect — Accès sécurisé',
       })
 
       const text = `Bonjour ${nom},
 
-Vous avez régénéré votre code de connexion personnel.
-
-Nouveau code : ${newPasskey}
+Vous avez régénéré votre code de connexion personnel depuis votre
+espace. Votre nouveau code vous a été affiché à ce moment-là.
 
 Toutes vos autres sessions ouvertes ont été déconnectées.
 
-Si vous n'avez pas demandé cette régénération, contactez l'administration.
+Si vous n'avez pas demandé cette régénération, contactez immédiatement
+l'administration — un tiers a peut-être accès à votre compte.
 
 — SchoolConnect
 `
@@ -146,14 +151,14 @@ Si vous n'avez pas demandé cette régénération, contactez l'administration.
       try {
         await sendEmail({
           to: prof.email!,
-          subject: 'Votre nouveau code de connexion',
+          subject: 'Votre code de connexion a été régénéré',
           html,
           text,
-          tag: 'passkey-self-rotated',
+          tag: 'passkey-self-rotated-notification',
         })
       } catch (err) {
-        // Non-fatal. The passkey is already saved; the prof can see
-        // it in the callable response. Email is redundancy.
+        // Non-fatal. The passkey was already shown to the prof in the
+        // callable response. Email is just the security audit trail.
         logger.warn('regenerateOwnPasskey: email send failed (non-fatal)', {
           uid,
           err: (err as Error).message,

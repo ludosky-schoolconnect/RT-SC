@@ -13,8 +13,9 @@
  * (they missed the trigger). In a freshly-activated system, the
  * button finds no candidates and cleanly exits.
  *
- * Pre-Blaze: button detects `functions/not-found` and surfaces a
- * toast explaining that the feature needs Blaze. No call burn.
+ * Session E4 — the pre-Blaze "function not available" branch was
+ * removed. Blaze is required for any function to run, and the whole
+ * Session E system assumes it.
  *
  * Idempotency: re-running against already-migrated profs is safe —
  * the server-side callable just issues a fresh passkey each time
@@ -43,10 +44,6 @@ interface ProgressEntry {
   nom: string
   status: 'pending' | 'done' | 'failed'
   error?: string
-}
-
-function isFallbackCode(code: string | undefined): boolean {
-  return code === 'functions/not-found' || code === 'functions/unavailable'
 }
 
 export function MigrateProfPasskeysButton() {
@@ -92,7 +89,6 @@ export function MigrateProfPasskeysButton() {
 
     let successCount = 0
     let failCount = 0
-    let blazeMissing = false
 
     for (const prof of candidates) {
       try {
@@ -104,11 +100,6 @@ export function MigrateProfPasskeysButton() {
           )
         )
       } catch (err) {
-        const code = (err as FunctionsError)?.code
-        if (isFallbackCode(code)) {
-          blazeMissing = true
-          break
-        }
         failCount++
         setProgress((prev) =>
           prev.map((e) =>
@@ -116,7 +107,7 @@ export function MigrateProfPasskeysButton() {
               ? {
                   ...e,
                   status: 'failed',
-                  error: (err as Error).message ?? 'inconnue',
+                  error: (err as FunctionsError)?.message ?? (err as Error).message ?? 'inconnue',
                 }
               : e
           )
@@ -126,11 +117,7 @@ export function MigrateProfPasskeysButton() {
 
     setRunning(false)
 
-    if (blazeMissing) {
-      toast.error(
-        "Migration impossible : la fonction serveur n'est pas encore déployée (Blaze non actif)."
-      )
-    } else if (failCount === 0) {
+    if (failCount === 0) {
       toast.success(
         `Migration terminée. ${successCount} professeur${successCount > 1 ? 's' : ''} migré${successCount > 1 ? 's' : ''}.`
       )

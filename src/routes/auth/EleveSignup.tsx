@@ -2,30 +2,25 @@
  * RT-SC · Élève signup (identity verification).
  *
  * Three fields: nom, genre, date_naissance.
- * Searches across ALL classes for an exact (nom, genre, date_naissance) match.
- * On success, displays the class name + passkey for the student to write down.
+ * Server-side lookup via the findEleveIdentity Cloud Function
+ * (admin SDK scans the eleves collection group, which is locked
+ * down to staff-only reads at the rules layer — see E3 rules).
+ * On success, displays the class name + passkey for the student to
+ * write down.
  *
- * Heavy read on first run (one collection-group scan or one classes loop) —
- * but happens at most once per élève per device, then they switch to the login
- * flow with the saved passkey. Acceptable.
+ * Session E4 — the pre-Blaze fallback (client-side collectionGroup
+ * scan) has been removed. Blaze must be active for signup to work;
+ * the Firestore rule on eleves collection group is isStaff()-only,
+ * so the old fallback path would fail the rule anyway.
  */
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CircleCheck, GraduationCap, KeyRound, ArrowRight, User } from 'lucide-react'
-import {
-  collectionGroup,
-  query,
-  where,
-  getDocs,
-  getDoc,
-  doc as fsDoc,
-} from 'firebase/firestore'
 import { httpsCallable, type FunctionsError } from 'firebase/functions'
-import { db, functions } from '@/firebase'
-import { nomClasse } from '@/lib/benin'
-import type { Classe, Eleve, Genre } from '@/types/models'
+import { functions } from '@/firebase'
+import type { Genre } from '@/types/models'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -37,13 +32,9 @@ interface VerifyResult {
 }
 
 /**
- * Session E2 → E3 — findEleveIdentity callable shape.
- *
- * E3 expanded the match payload so the client doesn't need to read
- * the éleve or classe docs directly — the server-side admin-SDK
- * lookup returns everything the signup success screen displays.
- * This lets E3 tighten the eleves collectionGroup read rule without
- * breaking signup.
+ * findEleveIdentity callable shape.
+ * The expanded match payload includes everything the signup success
+ * screen needs — no follow-up doc reads required.
  */
 interface FindInput {
   mode: 'byIdentity'
@@ -60,15 +51,6 @@ interface FindOutput {
     classePasskey: string
     classeNom: string
   } | null
-}
-
-/** Error codes from the callable that signify "Blaze not active yet — fall back". */
-function isFallbackCode(code: string | undefined): boolean {
-  return (
-    code === 'functions/not-found' ||
-    code === 'functions/unavailable' ||
-    code === 'functions/internal'
-  )
 }
 
 export default function EleveSignup() {
@@ -94,120 +76,42 @@ export default function EleveSignup() {
 
     setSubmitting(true)
     try {
-      // Session E3 — server-side lookup first, legacy scan as fallback.
-      //
-      // The callable (post-Blaze) returns the full payload needed for
-      // the success screen (eleveId, classeId, nom, classePasskey,
-      // classeNom) so we don't need any follow-up doc reads — which
-      // matters because E3 tightens the eleves collectionGroup read
-      // rule to require auth + staff role.
-      //
-      // Pre-Blaze fallback runs the legacy client-side query + the
-      // follow-up classe doc read exactly as before E2. That path
-      // only works while the collectionGroup rule is still
-      // `allow read: if true`, i.e. BEFORE the E3 rules are deployed.
-      // If you deploy the E3 rules without Blaze being on, the
-      // fallback breaks — in practice, the E3 rules are deployed
-      // alongside Blaze activation, so the fallback path is only
-      // active in the pre-Blaze period.
-
-      try {
-        const call = httpsCallable<FindInput, FindOutput>(
-          functions,
-          'findEleveIdentity'
-        )
-        const res = await call({
-          mode: 'byIdentity',
-          nom: cleanNom,
-          genre: genre as 'M' | 'F',
-          dateNaissance,
-        })
-
-        if (!res.data.match) {
-          setError(
-            "Identité introuvable. Vérifiez l'orthographe exacte de votre nom et que l'école a bien créé votre profil."
-          )
-          return
-        }
-
-        // Expanded payload → build result directly. No follow-up read.
-        setResult({
-          passkey: res.data.match.classePasskey,
-          classeNom: res.data.match.classeNom,
-        })
-        return
-      } catch (err) {
-        const errCode = (err as FunctionsError)?.code
-        if (!isFallbackCode(errCode)) {
-          console.error('[EleveSignup] callable error:', err)
-          setError('Vérification impossible. Réessayez dans quelques minutes.')
-          return
-        }
-        // Fall through to legacy path below
-      }
-
-      // ─── Legacy fallback (pre-Blaze) ────────────────────────
-      // Direct collectionGroup query — same as pre-E2 behavior.
-      // Requires the composite index in firestore.indexes.json AND
-      // the `allow read: if true` rule on /{path=**}/eleves/{eleveId}
-      // (which is the pre-E3 state).
-      const q = query(
-        collectionGroup(db, 'eleves'),
-        where('nom', '==', cleanNom),
-        where('genre', '==', genre),
-        where('date_naissance', '==', dateNaissance)
+      // Session E4 — server-only. The findEleveIdentity callable runs
+      // with admin SDK so it can scan the eleves collection group
+      // even though the rules layer restricts it to isStaff() reads.
+      // There is no client-side fallback — if the callable is
+      // unavailable, the user sees an error rather than a silent
+      // weaker path.
+      const call = httpsCallable<FindInput, FindOutput>(
+        functions,
+        'findEleveIdentity'
       )
-      const snap = await getDocs(q)
+      const res = await call({
+        mode: 'byIdentity',
+        nom: cleanNom,
+        genre: genre as 'M' | 'F',
+        dateNaissance,
+      })
 
-      if (snap.empty) {
+      if (!res.data.match) {
         setError(
           "Identité introuvable. Vérifiez l'orthographe exacte de votre nom et que l'école a bien créé votre profil."
         )
         return
       }
 
-      const eleveSnap = snap.docs[0]
-      const eleveData = eleveSnap.data() as Eleve
-      void eleveData
-      const classeId = eleveSnap.ref.parent.parent?.id
-      if (!classeId) {
-        setError('Données incomplètes. Contactez votre administration.')
-        return
-      }
-
-      const classeSnap = await getDoc(fsDoc(db, 'classes', classeId))
-      if (!classeSnap.exists()) {
-        setError('Votre classe est introuvable. Contactez votre administration.')
-        return
-      }
-      const classeData = classeSnap.data() as Classe
-
       setResult({
-        passkey: classeData.passkey,
-        classeNom: nomClasse(classeData),
+        passkey: res.data.match.classePasskey,
+        classeNom: res.data.match.classeNom,
       })
     } catch (err) {
-      console.error('[EleveSignup] verification error:', err)
-      const code =
-        typeof err === 'object' && err && 'code' in err
-          ? String((err as { code?: string }).code)
-          : ''
-      if (code === 'failed-precondition' || code === 'permission-denied') {
-        // Firestore composite index missing OR security rules block the read.
-        // The Firebase SDK puts a "create index" URL in the error message — log it
-        // so a developer with DevTools open can click it.
-        if (import.meta.env.DEV) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            '[EleveSignup] Firestore index probably missing. Open DevTools → Console for the URL to auto-create it. See PHASE-2-NOTES.md.'
-          )
-          // eslint-disable-next-line no-console
-          console.warn(err)
-        }
-        setError(
-          "L'index de recherche n'est pas encore configuré. Contactez l'administration."
-        )
+      const errCode = (err as FunctionsError)?.code
+      if (errCode === 'functions/resource-exhausted') {
+        setError('Trop de tentatives. Réessayez dans quelques minutes.')
+      } else if (errCode === 'functions/invalid-argument') {
+        setError('Données incomplètes. Vérifiez votre saisie.')
       } else {
+        console.error('[EleveSignup] verification error:', err)
         setError("Erreur de vérification. Vérifiez votre internet ou réessayez plus tard.")
       }
     } finally {

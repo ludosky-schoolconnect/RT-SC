@@ -8,16 +8,12 @@
  * Responsibilities:
  *   1. Generate a fresh 6-digit loginPasskey and stamp it on the doc
  *      (alongside loginPasskeyVersion: 1 for first-time).
- *   2. Email the prof their passkey via the existing Resend pipeline.
- *      Subject, body in French. Tells them to save it — they'll need
- *      it every time they return to the login page.
+ *   2. Send an activation NOTIFICATION email to the prof — but NOT
+ *      the passkey itself (see security note below).
  *
  * Idempotency: if the trigger fires twice for the same approval (e.g.
  * admin toggles statut back and forth, or function retries on crash),
  * we only stamp + email once — gated by "no existing loginPasskey".
- * Subsequent fires see a passkey already exists and skip. To force
- * regeneration, admin uses the regenerateOwnPasskey callable (Session
- * E2) or the upcoming admin regenerate-for-prof surface.
  *
  * Why we generate on activation instead of on signup:
  *   - En_attente profs don't have login rights yet; giving them a
@@ -27,12 +23,23 @@
  *   - Keeps the signup flow (which runs unauthenticated) free of
  *     side effects on /professeurs writes
  *
+ * ─── Session E4 — passkey NOT emailed ─────────────────────────
+ *
+ * The passkey is shown in the admin's UI (the /ecole/professeurs
+ * admin view shows it via the onProfActivated write's subsequent
+ * query) but NEVER in the activation email. Reason: schools in the
+ * target market frequently have shared Gmail accounts, open phone
+ * notifications, and family members with access to each other's
+ * devices. A passkey traveling via email is trivially exposed. The
+ * admin hands the code over in person or through a private channel
+ * they trust. This matches vanilla SchoolConnect's historic flow.
+ *
  * Email failure: logged, NOT rethrown. The passkey is already
  * stamped on the doc so the prof can still be told manually by the
- * admin. Retrying forever on a permanent email failure (bounce, spam
- * filter) would burn invocations.
+ * admin. Retrying forever on a permanent email failure would burn
+ * invocations.
  *
- * This is Session E1a. Dormant until Blaze deploy.
+ * This is Session E1a, hardened in E4.
  */
 
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore'
@@ -107,18 +114,31 @@ export const onProfActivated = onDocumentUpdated(
     const appUrl = process.env.SCHOOL_APP_URL ?? ''
     const loginUrl = appUrl ? `${appUrl}/prof` : undefined
 
+    // Session E4 — IMPORTANT: the passkey is INTENTIONALLY not included
+    // in this email. Threat model: students or family members may have
+    // access to a prof's inbox (shared Gmail, open notifications on
+    // an unlocked phone, etc.) and could read the code and use it to
+    // impersonate the prof at the gate. By keeping the code out of
+    // the email, the only way to learn it is through the admin who
+    // generated it (it's shown in the admin's UI in the Profs tab).
+    //
+    // The prof must therefore contact their admin in person (or via
+    // a private channel) to get the code. Admins are expected to
+    // hand it over face-to-face, one-to-one. This matches vanilla
+    // SchoolConnect's historic flow and removes email from the
+    // threat surface.
     const body = `
       ${H1('Votre compte est activé')}
       ${P(`Bonjour ${escapeHtml(nom)},`)}
       ${P("L'administration a approuvé votre inscription. Vous pouvez maintenant accéder à votre espace professeur.")}
-      ${StrongP(`Votre code de connexion personnel : <span style="font-family:monospace;letter-spacing:0.08em;color:#0B2545;background:#F7F1DE;padding:2px 8px;border-radius:4px;">${passkey}</span>`)}
-      ${P('Conservez ce code. Vous en aurez besoin à chaque connexion pour déverrouiller la page de login, en plus de votre mot de passe.')}
+      ${StrongP("Un code de connexion personnel à 6 chiffres a été généré pour vous. Demandez-le directement à votre administrateur — pour votre sécurité, il n'est pas transmis par email.")}
+      ${P("Ce code vous sera demandé à chaque connexion pour déverrouiller la page de login, en plus de votre mot de passe.")}
       ${P("Si vous souhaitez changer ce code plus tard, rendez-vous dans l'onglet « Mon profil » de votre espace.")}
     `
 
     const html = renderEmailShell({
       body,
-      preheader: `Votre code de connexion : ${passkey}`,
+      preheader: 'Votre compte professeur est activé. Contactez votre administrateur pour obtenir votre code.',
       cta: loginUrl ? { label: 'Ouvrir mon espace', url: loginUrl } : undefined,
       signature: 'SchoolConnect — Accès sécurisé',
     })
@@ -127,11 +147,13 @@ export const onProfActivated = onDocumentUpdated(
 
 Votre compte professeur est activé.
 
-Votre code de connexion personnel : ${passkey}
+Un code de connexion personnel a été généré pour vous. Demandez-le
+directement à votre administrateur — pour votre sécurité, il n'est
+pas transmis par email.
 
-Conservez-le : il sera demandé à chaque connexion pour déverrouiller la page de login.
-
-${loginUrl ? `Se connecter : ${loginUrl}\n` : ''}
+Ce code vous sera demandé à chaque connexion pour déverrouiller la
+page de login, en plus de votre mot de passe.
+${loginUrl ? `\nSe connecter : ${loginUrl}\n` : ''}
 — SchoolConnect
 `
 
@@ -141,7 +163,7 @@ ${loginUrl ? `Se connecter : ${loginUrl}\n` : ''}
         subject: 'Votre compte professeur est activé',
         html,
         text,
-        tag: 'prof-activated-passkey',
+        tag: 'prof-activated-notification',
       })
     } catch (err) {
       logger.error('onProfActivated: email send failed (non-fatal)', {

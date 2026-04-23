@@ -172,18 +172,28 @@ export const regeneratePasskeyForProf = onCall(
       const appUrl = process.env.SCHOOL_APP_URL ?? ''
       const loginUrl = appUrl ? `${appUrl}/prof` : undefined
 
+      // Session E4 — IMPORTANT: the passkey is INTENTIONALLY not
+      // included in this email. See onProfActivated.ts for the full
+      // rationale. Summary: shared Gmail, open phone notifications,
+      // and family members on the target devices make email a weak
+      // channel for a secret. The admin who triggered this sees the
+      // new code in their own UI (MigrateProfPasskeysButton or any
+      // future per-prof regenerate surface) and communicates it to
+      // the prof in person or via a private channel they trust.
       const body = `
         ${H1(wasAlreadySet ? 'Votre code de connexion a été régénéré' : 'Votre code de connexion est prêt')}
         ${P(`Bonjour ${escapeHtml(nom)},`)}
-        ${P(`L'administration ${wasAlreadySet ? 'a régénéré' : 'vous a généré'} votre code de connexion personnel. Voici votre code :`)}
-        ${StrongP(`<span style="font-family:monospace;letter-spacing:0.08em;color:#0B2545;background:#F7F1DE;padding:2px 8px;border-radius:4px;">${newPasskey}</span>`)}
-        ${P('Conservez ce code. Il vous sera demandé à chaque connexion pour déverrouiller la page de login, en plus de votre mot de passe.')}
-        ${wasAlreadySet ? P('Toutes vos sessions ouvertes avec l\'ancien code ont été déconnectées.') : ''}
+        ${P(`L'administration ${wasAlreadySet ? 'a régénéré' : 'vous a généré'} votre code de connexion personnel.`)}
+        ${StrongP("Demandez votre nouveau code à 6 chiffres directement à votre administrateur — pour votre sécurité, il n'est pas transmis par email.")}
+        ${P('Ce code vous sera demandé à chaque connexion pour déverrouiller la page de login, en plus de votre mot de passe.')}
+        ${wasAlreadySet ? P("Toutes vos sessions ouvertes avec l'ancien code ont été déconnectées.") : ''}
       `
 
       const html = renderEmailShell({
         body,
-        preheader: `Votre code : ${newPasskey}`,
+        preheader: wasAlreadySet
+          ? 'Votre code a été régénéré. Contactez votre administrateur pour le recevoir.'
+          : 'Votre code est prêt. Contactez votre administrateur pour le recevoir.',
         cta: loginUrl ? { label: 'Ouvrir mon espace', url: loginUrl } : undefined,
         signature: 'SchoolConnect — Accès sécurisé',
       })
@@ -192,11 +202,12 @@ export const regeneratePasskeyForProf = onCall(
 
 L'administration ${wasAlreadySet ? 'a régénéré' : 'vous a généré'} votre code de connexion personnel.
 
-Code : ${newPasskey}
+Demandez votre nouveau code à 6 chiffres directement à votre
+administrateur — pour votre sécurité, il n'est pas transmis par email.
 
-Conservez-le : demandé à chaque connexion pour déverrouiller la page de login.
-${loginUrl ? `\nSe connecter : ${loginUrl}\n` : ''}
-
+Ce code vous sera demandé à chaque connexion pour déverrouiller la
+page de login, en plus de votre mot de passe.
+${wasAlreadySet ? `\nToutes vos sessions ouvertes avec l'ancien code ont été déconnectées.\n` : ''}${loginUrl ? `\nSe connecter : ${loginUrl}\n` : ''}
 — SchoolConnect
 `
 
@@ -208,7 +219,7 @@ ${loginUrl ? `\nSe connecter : ${loginUrl}\n` : ''}
             : 'Votre code de connexion est prêt',
           html,
           text,
-          tag: 'passkey-admin-regenerated',
+          tag: 'passkey-admin-regenerated-notification',
         })
       } catch (err) {
         logger.warn('regeneratePasskeyForProf: email send failed (non-fatal)', {
