@@ -46,7 +46,25 @@
  *                                     hasn't run rollover, triggers emergency
  *                                     snapshot + emails admin a nudge.
  *
- * Pending session:
+ *   Session E1a — Prof security + orphan cleanup (foundation)
+ *     - verifyProfLogin             → HTTPS callable for per-prof passkey
+ *                                     verification. Returns 12h HMAC token
+ *                                     on success. Rate-limited 5/15min.
+ *     - onProfActivated             → fires when admin flips statut
+ *                                     en_attente → actif. Generates login
+ *                                     passkey + emails it to the prof.
+ *     - onProfDeleteCascade         → cleans orphan refs on prof delete:
+ *                                     matieresProfesseurs map, notes.professeurId,
+ *                                     colles.donneParProfId.
+ *     - onClasseDelete              → cleans class-level orphans: presences,
+ *                                     publications, emploisDuTemps + seances,
+ *                                     coefficients override doc.
+ *
+ * Pending sessions:
+ *   Session E1b — remaining orphan triggers (eleve cascade, pre-inscription,
+ *                 annuaire parent, annale)
+ *   Session E2 — client callables wiring (passkey gate, eleve/parent lookup)
+ *   Session E3 — rules tightening + migration admin button
  *   Session D — Frontend cleanup (remove now-redundant client-side workarounds)
  *
  * See /DEPLOY-ONCE-BLAZE-IS-READY.md for the step-by-step deploy checklist.
@@ -68,3 +86,9 @@ export { weeklyStaleAbsencesCleanup } from './scheduled/weeklyStaleAbsencesClean
 export { nightlyBackup } from './scheduled/nightlyBackup.js'
 export { yearlySnapshotOnRollover } from './triggers/yearlySnapshotOnRollover.js'
 export { yearlySnapshotFallback } from './scheduled/yearlySnapshotFallback.js'
+
+// ── Session E1a
+export { verifyProfLogin } from './http/verifyProfLogin.js'
+export { onProfActivated } from './triggers/onProfActivated.js'
+export { onProfDeleteCascade } from './triggers/onProfDeleteCascade.js'
+export { onClasseDelete } from './triggers/onClasseDelete.js'
