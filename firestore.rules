@@ -47,7 +47,14 @@ service cloud.firestore {
     // ══════════════════════════════════════════════════════════
 
     match /{path=**}/eleves/{eleveId} {
-      allow read: if true;
+      // Session E3 — tightened from `allow read: if true` to staff-only.
+      // Éleve signup and parent login no longer scan this collection
+      // group from the client; they call the `findEleveIdentity`
+      // Cloud Function which uses admin SDK (bypasses rules). Staff
+      // tooling (school-wide éleve list, finances terminal, school
+      // analytics) still needs the collection group read, so we
+      // keep it open for isStaff().
+      allow read: if isStaff();
     }
 
     match /{path=**}/notes/{noteId}         { allow read: if isStaff(); }
@@ -350,16 +357,23 @@ service cloud.firestore {
                     && request.auth.uid == userId
                     && request.resource.data.statut == 'en_attente';
 
-      // Admins and the SaaS master can update any field on any prof.
-      allow update: if isAdmin() || isSaaSMaster()
-                       // Session 7.3 — OR the authenticated user is
-                       // writing to their OWN doc AND the only field
-                       // being changed is `signature`. This lets profs
-                       // save their own signature from the "Mon profil"
-                       // tab without opening up the whole doc. Exact
-                       // field-set check via diff().affectedKeys() so
-                       // a malicious prof can't sneak in a role change
-                       // alongside a signature update.
+      // Admins and the SaaS master can update any field on any prof,
+      // EXCEPT the three Session-E-managed credential fields
+      // (loginPasskey, loginPasskeyVersion, lastLoginAt). Those are
+      // written exclusively by Cloud Functions via the admin SDK
+      // (which bypasses rules entirely). Blocking them here defends
+      // against devtools shenanigans — an admin can't F12 and stamp
+      // themselves a known passkey.
+      allow update: if (
+                      (isAdmin() || isSaaSMaster())
+                      && !request.resource.data.diff(resource.data).affectedKeys()
+                           .hasAny(['loginPasskey', 'loginPasskeyVersion', 'lastLoginAt'])
+                    )
+                       // Session 7.3 — self-write to the `signature`
+                       // field only. Exact field-set check via
+                       // diff().affectedKeys() so a malicious prof
+                       // can't sneak in a role change alongside a
+                       // signature update.
                     || (
                       request.auth != null
                       && request.auth.uid == userId
