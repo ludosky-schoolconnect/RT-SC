@@ -31,7 +31,6 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { logger } from 'firebase-functions/v2'
 import {
-  collectionGroup,
   FieldValue,
   Timestamp,
 } from 'firebase-admin/firestore'
