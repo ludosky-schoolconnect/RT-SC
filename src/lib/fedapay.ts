@@ -37,6 +37,21 @@ export interface FedaPayTransaction {
     email?: string
     phone_number?: { number: string; country: string }
   }
+  /**
+   * Session E5 — optional transaction metadata.
+   *
+   * FedaPay passes this through to the webhook payload untouched,
+   * letting us tag each transaction with info the webhook server
+   * needs to route correctly. We use it to embed the originating
+   * school's Firebase project ID so the fedapayWebhook Cloud
+   * Function can filter events by school (one FedaPay account
+   * serves all schools → every webhook fires on every payment →
+   * metadata filtering prevents cross-school deadline writes).
+   *
+   * Keys are free-form strings. Values should be string-ish since
+   * FedaPay stringifies them on the wire.
+   */
+  custom_metadata?: Record<string, string | number | boolean | null>
 }
 
 /**

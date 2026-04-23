@@ -36,6 +36,8 @@ import {
   getDoc,
   type Firestore,
 } from 'firebase/firestore'
+import type { FirebaseApp } from 'firebase/app'
+import { ensureSaaSMasterClaim } from './saasMaster'
 
 export interface BootstrapInput {
   /** Display name, e.g. "CEG HOUETO" */
@@ -121,6 +123,7 @@ export async function isAlreadyBootstrapped(
  * from Firebase Console before retrying.
  */
 export async function bootstrapSchool(
+  app: FirebaseApp,
   auth: Auth,
   db: Firestore,
   input: BootstrapInput
@@ -152,7 +155,41 @@ export async function bootstrapSchool(
     throw err
   }
 
-  // ─── 2. Batch-write all seed docs ──────────────────────────
+  // ─── 2. Promote to SaaSMaster via custom claim (E5) ────────
+  //
+  // The batch writes below need SaaSMaster permission because
+  // Firestore rules restrict /ecole/** writes to
+  // (active-admin + unlock) OR SaaSMaster. A brand-new school has
+  // no /professeurs doc yet (we're about to create it), so the
+  // active-admin check fails — SaaSMaster is the only valid path.
+  //
+  // We call ensureSaaSMasterClaim right after user creation so the
+  // claim lands + token refreshes BEFORE the writeBatch.
+  //
+  // If the admin email is not in the SaaSMaster allowlist
+  // (ludoskyazon@gmail.com), the callable returns permission-denied.
+  // In that case we still continue — the vendor may have chosen a
+  // different admin email, and the writes will fail at rules with
+  // a clearer error that the vendor can act on. Blocking here would
+  // be unhelpful.
+  const claimResult = await ensureSaaSMasterClaim(app, user)
+  if (claimResult.callableUnavailable) {
+    // Pre-Blaze or functions not deployed. The writes below will
+    // fail if the deployed rules are the E5 version — rules need
+    // SaaSMaster claim. Warn loudly so the vendor knows.
+    console.warn(
+      '[bootstrap] setSaaSMasterClaim unavailable —',
+      claimResult.message
+    )
+  } else if (!claimResult.claimPresent) {
+    console.warn(
+      '[bootstrap] saasMaster claim not set —',
+      claimResult.message,
+      '— writes may fail against E5 rules.'
+    )
+  }
+
+  // ─── 3. Batch-write all seed docs ──────────────────────────
   const batch = writeBatch(db)
   const written: string[] = []
 

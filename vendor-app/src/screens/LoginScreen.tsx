@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { signInWithEmailAndPassword } from 'firebase/auth'
 import { ArrowLeft, Lock, Mail, LogIn, AlertCircle } from 'lucide-react'
 import { useSession } from '@/lib/session'
+import { ensureSaaSMasterClaim } from '@/lib/saasMaster'
 import { Button } from '@/ui/Button'
 import { Input } from '@/ui/Input'
 
@@ -47,6 +48,36 @@ export function LoginScreen() {
         email.trim(),
         password
       )
+
+      // Session E5 — promote this account to SaaSMaster via custom
+      // claim. The callable verifies email + email_verified then sets
+      // { saasMaster: true } on this user's Firebase Auth profile in
+      // THIS school's project. Firestore rules check the claim, so
+      // after this call + the token forceRefresh baked into the
+      // helper, we can write to any /ecole/** / /classes/** doc
+      // regardless of the school's lock state.
+      //
+      // If the function isn't deployed yet on this school (pre-E5
+      // or pre-Blaze), the helper returns callableUnavailable:true
+      // and we continue with a warning — legacy UID-based rules
+      // might still be in place for that school.
+      const claimResult = await ensureSaaSMasterClaim(firebase.app, cred.user)
+      if (!claimResult.claimPresent && !claimResult.callableUnavailable) {
+        // Callable reached the server but returned a failure we care
+        // about (permission-denied, email not verified, etc). Surface
+        // to the user and stop — they likely can't do SaaSMaster ops.
+        setError(
+          claimResult.message ??
+            "Promotion SaaSMaster impossible. Vérifiez votre compte."
+        )
+        setLoading(false)
+        return
+      }
+      if (claimResult.callableUnavailable && claimResult.message) {
+        // Non-fatal warning. Log it; the app continues.
+        console.warn('[login]', claimResult.message)
+      }
+
       completeAuth(cred.user)
     } catch (err) {
       console.error('[login] failed:', err)

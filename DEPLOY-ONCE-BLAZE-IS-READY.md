@@ -733,3 +733,132 @@ the noise in FedaPay's logs while rolled back:
 - When you re-enable functions later, re-enable the webhook too
 
 Data is safe either way — nothing in this rollout deletes user data.
+
+---
+
+## Session E5 addendum — adding a new school (post-E5 workflow)
+
+After E5 ships, adding a new school is mostly automated. Follow this
+sequence:
+
+### Step 1 — Create the Firebase project
+
+Firebase Console → "Add project" → follow prompts. Note the project
+ID (e.g. `schoolconnect-newschool`).
+
+### Step 2 — Create your ops Auth account in that project
+
+Firebase Console → Authentication → Users → Add user.
+- Email: your ops email (e.g. `ludoskyazon@gmail.com`)
+- Password: set a strong password
+
+Then trigger email verification (Firebase sends a verification link;
+click it in your inbox). Verified status is required for the
+`setSaaSMasterClaim` callable to accept the caller.
+
+### Step 3 — Run the onboarding script
+
+```bash
+./scripts/onboard-new-school.sh
+```
+
+The script:
+- Registers the project with firebase CLI
+- Creates `schools/<pid>.json` skeleton
+- Creates `functions/.env.<pid>` skeleton
+- Prompts for `HMAC_SECRET` (use the same value across schools)
+- Optionally deploys functions
+
+### Step 4 — Edit `functions/.env.<pid>`
+
+Open the created file and set:
+- `SAAS_MASTER_EMAILS=ludoskyazon@gmail.com` (or whatever ops email
+  you used in Step 2)
+- `RESEND_API_KEY` if you want email notifications
+
+Then redeploy functions so the env var is picked up:
+```bash
+firebase deploy --only functions --project schoolconnect-newschool
+```
+
+### Step 5 — Upgrade the project to Blaze
+
+Firebase Console → Usage and Billing → Modify plan → Blaze.
+Set a $5/month budget alert.
+
+### Step 6 — Bootstrap via vendor-app
+
+- Open vendor-app in browser
+- Add school → paste the Firebase config for the new project
+- Log in with your ops email
+- `ensureSaaSMasterClaim` fires → custom claim set → token refreshes
+- Navigate to BootstrapScreen → fill the form (school name, school
+  admin email, passkeys, FedaPay public key, etc) → submit
+- All `/ecole/*` and `/professeurs/{adminUid}` docs get seeded in a
+  batch write
+
+### Step 7 — Deploy rules + hosting
+
+```bash
+./deploy-school.sh schools/schoolconnect-newschool.json
+```
+
+### Step 8 — Set up the FedaPay webhook
+
+In your FedaPay dashboard (one account covers all schools):
+- Settings → Webhooks → Create webhook
+- URL: `https://us-central1-schoolconnect-newschool.cloudfunctions.net/fedapayWebhook`
+- Event: `transaction.approved`
+- FedaPay shows a signing secret — copy it
+
+Back in terminal:
+```bash
+firebase functions:secrets:set FEDAPAY_WEBHOOK_SECRET --project schoolconnect-newschool
+# Paste the signing secret when prompted
+
+# Redeploy to bind the new secret
+firebase deploy --only functions --project schoolconnect-newschool
+```
+
+### Step 9 — Verify
+
+- Log in to the new school as admin (the school director's account,
+  created by bootstrap)
+- Try (DevTools): `setDoc on /ecole/subscription.deadline` → should
+  fail with permission-denied
+- Pay a sandbox FedaPay transaction tagged with this school's
+  project ID in `custom_metadata.school_id` → webhook extends
+  deadline → LockedPage auto-unlocks
+
+Done. The new school is fully onboarded with the same security
+posture as existing schools.
+
+---
+
+## How existing schools get new improvements
+
+Each school is a separate Firebase project. When you ship improvements
+to RT-SC, you need to push to each one. The standard pattern:
+
+```bash
+# Push hosting + rules to every school (run after any RT-SC code change)
+for config in schools/*.json; do
+  ./deploy-school.sh "$config"
+done
+
+# Push functions to every school (run after any functions/ code change)
+for pid in schoolconnect-nlg schoolconnect-mag schoolconnect-houeto schoolconnect-1adfa; do
+  firebase deploy --only functions --project "$pid"
+done
+```
+
+The `deploy-school.sh` script handles `firestore.rules` + `hosting`
+in one command (see its `--rules-only` / `--hosting-only` flags for
+finer control).
+
+For new-ish schools (added after a feature shipped), the first
+deploy to them automatically includes all current code — you don't
+need to "backfill" anything. That's just how Firebase deploys work:
+they push whatever the current source tree contains.
+
+Last updated: 23 April 2026 (E5).

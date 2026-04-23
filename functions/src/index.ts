@@ -65,3 +65,11 @@ export { regenerateOwnPasskey } from './http/regenerateOwnPasskey.js'
 
 // ── Session E3
 export { regeneratePasskeyForProf } from './http/regeneratePasskeyForProf.js'
+
+// ── Session E5 — SaaSMaster custom claim
+// setSaaSMasterClaim promotes a caller with ludoskyazon@gmail.com
+// (and email_verified) to SaaSMaster via Firebase Auth custom claim.
+// Called by vendor-app on login so rules' isSaaSMaster() works
+// uniformly across every school project without per-school UID
+// hardcoding.
+export { setSaaSMasterClaim } from './http/setSaaSMasterClaim.js'

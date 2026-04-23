@@ -1,169 +1,316 @@
-# Session E — Prof Security + Orphan Cleanup (FINAL HANDOVER)
+# Session E — Prof Security + Subscription Hardening (FINAL, E5)
 
-**Purpose**: server-side foundation for per-prof login passkeys, plus
-Firestore trigger-based orphan cleanup for deletions the client misses.
+Session E is now fully shipped through E5. This doc captures the
+whole arc and the final post-E5 state.
 
-**Status**: E1a + E1b + E2 + E2 hotfix + E3 + E4 complete.
-Session E is fully shipped. Blaze activation required for the system
-to function — see the deploy steps below.
+Status: E1a + E1b + E2 + E3 + E4 + E5 complete. Blaze required.
 
 ---
 
-## What changed in E4 vs the prior E3 commits
+## What each turn shipped
 
-E4 is the "commit to Blaze" cleanup. It removes the pre-Blaze
-fallback code paths that E1a/E1b/E2/E3 carried as transition scaffolding,
-and hardens the email-delivery pipeline so passkeys never travel
-through email.
-
-### Client files changed (5)
-
-| File | Change |
-|---|---|
-| `src/routes/auth/ProfPasskeyGate.tsx` | Removed `verifyLegacy()`, removed `mode: 'legacy'` from GateUnlock, removed SecuriteConfig import, email is now REQUIRED. Any stale pre-E4 sessionStorage entries (bare "1" marker or legacy-mode JSON) are treated as expired and the user re-enters email+passkey once. |
-| `src/routes/auth/EleveSignup.tsx` | Removed the collectionGroup fallback. Callable is the only path. Dropped `collectionGroup`/`query`/`where`/`getDocs`/`getDoc`/`fsDoc`/`db` imports + `Classe`/`Eleve` imports (unused now) + `isFallbackCode` helper + `nomClasse`. |
-| `src/routes/auth/ParentLogin.tsx` | Same treatment — server-only, no fallback. Kept `fsDoc` + `updateDoc` for the post-match `active_parent_session_uid` write (still needed). |
-| `src/routes/prof/tabs/profil/MonProfilSection.tsx` | Removed `isFallbackCode` + "Blaze not available" toast message. Success toast no longer says "Consultez votre email" since the email no longer contains the code. |
-| `src/routes/admin/tabs/profs/MigrateProfPasskeysButton.tsx` | Removed the `blazeMissing` early-break path. If the callable fails, the failure is reported per-prof in the progress table. |
-
-### Functions files changed (3)
-
-| File | Change |
-|---|---|
-| `functions/src/triggers/onProfActivated.ts` | Email body no longer includes the passkey. Email is now a notification: "your account is activated, ask your administrator for your code." Subject unchanged. Tag updated to `prof-activated-notification`. |
-| `functions/src/http/regeneratePasskeyForProf.ts` | Same treatment — admin-initiated regeneration still writes the new passkey server-side and returns it to the admin's UI, but the email to the prof is just a notification. Tag updated to `passkey-admin-regenerated-notification`. |
-| `functions/src/http/regenerateOwnPasskey.ts` | Self-rotation email changed from "here's your new code" to "your code was regenerated from your account." The prof already sees the code in their browser via the callable response, so email duplication was removing not security. Also serves as security audit trail ("if you didn't do this, contact admin"). Tag updated to `passkey-self-rotated-notification`. |
-
-### Not changed in E4
-
-- `functions/src/scheduled/expireStalePasskeys.ts` — already doesn't leak the code (it notifies the prof their code was CLEARED due to inactivity). No change needed.
-- `functions/src/http/verifyProfLogin.ts` — server-side verification unchanged.
-- `functions/src/http/findEleveIdentity.ts` — unchanged.
-- Firestore rules — unchanged from E3 (still requires staff read on eleves collection group, blocks client writes to the three session-managed fields on professeurs).
-- `passkeyProf` field in SecuriteConfig — **kept**, still used as the signup gatekeeper in `ProfAuth.tsx`. Session E was only ever about login. The PasskeyProfPanel admin UI is unchanged.
-- `passkeyCaisse` — same, still used for caissier signup.
-- The 4h gate TTL — unchanged.
+| Turn | Goal | Key shipping |
+|---|---|---|
+| E1a | Foundation of per-prof passkey login | `verifyProfLogin`, `onProfActivated`, `onProfDeleteCascade`, `onClasseDelete`, `lib/passkey.ts` HMAC helpers |
+| E1b | Completion: orphan cleanup + self-service | `onEleveDeleteCascade`, `onPreInscriptionDelete`, `expireStalePasskeys`, `findEleveIdentity`, `regenerateOwnPasskey` |
+| E2 | Wire client to callables, pre-Blaze fallbacks | `ProfPasskeyGate`, `EleveSignup`, `ParentLogin`, `MonProfilSection` all with dual-mode |
+| E2 hotfix | Security fix + TS cleanup | Removed alreadyAuthed bypass (gate now challenges every fresh tab) |
+| E3 | Rules tightening + admin migration + 4h TTL | eleves collectionGroup staff-only, professeurs credential field blocks, `regeneratePasskeyForProf`, `MigrateProfPasskeysButton` |
+| E4 | Commit to Blaze: drop fallbacks + harden emails | Removed pre-Blaze paths in 5 client files, passkey never in email body |
+| **E5** | **Server-side subscription enforcement + custom-claim SaaSMaster + FedaPay webhook + onboarding script** | **See below** |
 
 ---
 
-## What the complete auth architecture looks like post-E4
+## Session E5 — what shipped
 
-### Signup (unchanged from pre-E)
+### 1. `firestore.rules` — full rewrite
 
-- **Prof signup** (`ProfAuth.tsx`): new prof types the school-wide `passkeyProf` + their credentials, creates account with `statut: 'en_attente'`. Admin must approve.
-- **Caissier signup** (`CaisseAuth.tsx`): same flow with `passkeyCaisse` (falls back to `passkeyProf` if `passkeyCaisse` is unset).
-- **PasskeyProfPanel** rotates these school-wide signup codes. Unchanged.
+New helper functions:
+- **`isActiveStaff()`** — `isStaff()` + has a prof doc + `statut == 'actif'`. Used where a disabled prof shouldn't pass checks.
+- **`isActiveAdmin()`** — `isActiveStaff()` + role == 'admin'
+- **`isSaaSMaster()`** — changed from UID match to custom claim: `request.auth.token.saasMaster == true`. No per-school UID hardcoding.
+- **`isUnlocked()`** — returns true when `/ecole/subscription.isManualLock != true` AND `request.time < deadline + 3d grace`. Fail-safe: if the doc is missing, returns false (locked).
+- **`canWriteSchoolData()`** — shorthand for `(isActiveStaff() && isUnlocked()) || isSaaSMaster()`
 
-### Login (E4-hardened)
+`/ecole/subscription` write rule — split:
+- Admins: can ONLY flip `hasRequestedUnlock: true` (payment-reported signal)
+- SaaSMaster: full read + create + update + delete
 
-- **ProfPasskeyGate**: fresh tab opens → user types `email` + per-prof `loginPasskey`. Submitted to `verifyProfLogin` callable. On success, HMAC-signed 12h token returned, stashed in sessionStorage with 4h client-side TTL for re-prompt. Gate applies to every fresh tab regardless of Firebase Auth state.
-- **After the gate**: user lands on the regular Firebase Auth email+password login form.
-- **Éleve signup**: single-step lookup via `findEleveIdentity` callable. Only path.
-- **Parent login**: same callable, `byParentPasskey` mode. Anonymous sign-in happens after the match.
+`/professeurs` update rule — blocked fields expanded:
+- E3-era blocks preserved: `loginPasskey`, `loginPasskeyVersion`, `lastLoginAt`
+- E5 added: `role`. Admins can't promote accomplices or self-promote. Role changes go through SaaSMaster (vendor-app) only.
+- Self-signature write preserved (requires `isActiveStaff()` now)
 
-### Credential distribution
+`isUnlocked()` applied to every write rule that mutates school data:
+- `/classes/**`, `/annonces/**`, `/annonces_globales/**`, `/school_codes/**`, `/emploisDuTemps/**`, `/seances/**`, `/annales/**`, `/vigilance_ia/**`
+- `/archive/**`, `/archived_absences/**`
+- `/recompenses/**`, `/quetes/**`, `/reclamations/**`, `/annuaire_parents/**`
+- All subcollections of `/classes/{cid}/eleves/{eid}/**`
+- `/ecole/{non-subscription}/**`, `/system/**`, `/settings_inscription/**`
 
-- **Passkey generation**: always server-side (`onProfActivated` trigger, `regenerateOwnPasskey` callable, `regeneratePasskeyForProf` callable, or cleared by `expireStalePasskeys`).
-- **Communication to the prof**: admin-initiated regenerations show the code in the admin's UI. Self-regenerations show the code in the prof's own browser. **Email never contains the passkey** — in all three flows, the email is a notification telling the prof to look elsewhere for the actual code (admin's screen or their own).
+NOT applied to:
+- `/ecole/subscription` — otherwise you couldn't pay to unlock a locked school
+- `/pre_inscriptions/**` — revenue-generating anonymous flow, still accepted during lock
+- `/rv_counters/**` — pre-inscription counter, same reason
+- `/professeurs` create — new signup during lock still allowed (sits in en_attente)
+- `/cms/**` — SaaSMaster only anyway, no lock relevance
+
+`preinscriptionsOpen()` default changed from OPEN to CLOSED when config doc is missing. Safer default.
+
+Obsolete rules files removed:
+- `firestore-6g.rules` (superseded by the current rules)
+- `firestore-6d.rules` (historical)
+- `firestore-civisme-phase1.rules` (historical)
+- `🚨 SECURITY-TODO-BEFORE-DEPLOY.md` (all items now done)
+
+### 2. New Cloud Function: `setSaaSMasterClaim`
+
+File: `functions/src/http/setSaaSMasterClaim.ts`
+
+HTTPS callable. Promotes the caller to SaaSMaster by setting
+`{ saasMaster: true }` custom claim on their Firebase Auth user.
+
+Authorization:
+- Caller's email must be in the `SAAS_MASTER_EMAILS` env var
+  (comma-separated) set in `functions/.env.<project-id>`
+- `email_verified` must be true
+- If `SAAS_MASTER_EMAILS` is unset or empty, ALL callers rejected (fail-safe)
+
+**No email is hardcoded in the function source.** Each school declares
+its master email(s) via env var. In practice you'll use the same ops
+email across all schools, but the env-driven design means:
+- Different schools can have different master emails (useful for handoff)
+- Rotating the master for one school = edit `.env.<pid>` + redeploy
+  functions, no code change
+- Nothing baked into the compiled JS
+
+**Workflow per school**:
+1. In Firebase Console → Authentication → add an Auth account with
+   your ops email (e.g. `ludoskyazon@gmail.com`) in THIS school's
+   project. Make sure the email is verified.
+2. In `functions/.env.<project-id>`, set
+   `SAAS_MASTER_EMAILS=ludoskyazon@gmail.com`
+3. Deploy functions. Vendor-app login as that email will trigger the
+   callable, which sets the claim.
+
+Idempotent: calling again is a cheap read + no-op. Safe to invoke
+on every vendor-app login.
+
+Important: the caller MUST `user.getIdToken(true)` after a successful
+response so the refreshed token carries the new claim. The vendor-app
+`ensureSaaSMasterClaim` helper does this automatically.
+
+### 3. Updated Cloud Function: `fedapayWebhook`
+
+File: `functions/src/http/fedapayWebhook.ts`
+
+The function already existed (past-Ludosky wrote it during Phase 6g).
+E5 added:
+
+- `FedaPayEvent` type now includes `custom_metadata.school_id`
+- After signature verification + approval check, the function compares
+  `event.data.object.custom_metadata.school_id` against
+  `process.env.GCLOUD_PROJECT`
+- Mismatch or missing metadata → returns 200 + ignore (avoids FedaPay
+  retry storms for school-mismatched events)
+
+Why: one FedaPay account serves all schools. Without filtering,
+every school's webhook receives every event, and would extend its
+own deadline on other schools' payments.
+
+### 4. Reverted `LockedPage.tsx` to secure path
+
+The F12 bypass that past-Ludosky flagged in
+`🚨 SECURITY-TODO-BEFORE-DEPLOY.md` is closed:
+
+- Removed `usePayAndExtendSubscription` import + usage
+- `onComplete` now flips `hasRequestedUnlock: true` only (via
+  `useRequestUnlock`). Admin cannot write `deadline` from the
+  client anymore.
+- FedaPay widget `transaction` now includes `custom_metadata.school_id`
+  so the webhook can filter events per-project.
+- Success toast: "Paiement reçu ! Déblocage en cours — votre accès
+  sera rétabli sous quelques instants." (UX expects webhook to
+  trigger unlock within seconds)
+- Removed the `navigate('/admin?paid=true')` auto-bounce. The
+  SubscriptionGuard's onSnapshot listener picks up the new deadline
+  and auto-redirects.
+- Updated pay-section copy to say "Le déblocage est automatique après
+  confirmation du paiement par FedaPay."
+
+### 5. Vendor-app integration
+
+`vendor-app/src/lib/saasMaster.ts` — NEW helper:
+- `ensureSaaSMasterClaim(app, user)` — calls the callable, force-refreshes the ID token, returns `{ claimPresent, callableSucceeded, callableUnavailable, message }`
+- `hasSaaSMasterClaim(app)` — synchronous check on the current token
+
+`vendor-app/src/lib/bootstrap.ts`:
+- `bootstrapSchool` signature now takes `(app, auth, db, input)` — app added so the function can call the claim helper
+- Immediately after `createUserWithEmailAndPassword`, calls
+  `ensureSaaSMasterClaim` so the batch-writes below pass the rules
+
+`vendor-app/src/screens/LoginScreen.tsx`:
+- After successful signin, calls `ensureSaaSMasterClaim` before
+  transitioning to the command center
+- On permission-denied or email-not-verified, surfaces a clear error
+
+`vendor-app/src/screens/BootstrapScreen.tsx`:
+- Updated the `bootstrapSchool` call to pass `firebase.app`
+
+### 6. New onboarding script: `scripts/onboard-new-school.sh`
+
+Bundles the CLI steps for adding a new school project:
+- firebase use --add
+- Create `schools/<pid>.json` skeleton
+- Create `functions/.env.<pid>` skeleton
+- Prompt for HMAC_SECRET (shared value across schools)
+- Deploy functions
+- Print manual next steps (Blaze upgrade, FedaPay webhook, bootstrap)
+
+Can't scripts (require human):
+- Blaze plan upgrade (Firebase console)
+- FedaPay webhook creation (FedaPay dashboard)
+- Per-school FedaPay webhook secret (paste from FedaPay into Firebase secret)
 
 ---
 
-## Server-side security audit (what F12 can and cannot bypass)
+## Post-E5 deploy sequence (Blaze activation day)
 
-Reviewed during E4 session:
-
-### F12 cannot bypass ✓
-
-- Gate verification — HMAC signed server-side with secret the client never has
-- Passkey generation — server only (triggers + callables, admin SDK)
-- Writing to `loginPasskey`/`loginPasskeyVersion`/`lastLoginAt` — blocked by rules (E3)
-- Scanning the eleves collection group — blocked by rules (staff-only)
-- Orphan cleanup — trigger-based, not clientside
-- Email bodies — no passkey ever sent to email, so no exposure even if inbox is compromised
-
-### F12 can still do ✗
-
-- Pass through the gate if they know a prof's legitimate email + passkey combo (by design)
-- Extend HMAC token's 4h TTL by manually editing sessionStorage — BUT the server issues tokens with 12h expiry anyway, and any sensitive server-side callable that checks the token rejects expired ones. Client TTL is UX, not security.
-- Replay a stolen HMAC token within its validity window (physical-access threat; rare, bounded by token TTL and passkey rotation)
-
-### Noted for future cleanup (not in Session E scope)
-
-- Subscription unlock fields (`isManualLock`, `hasRequestedUnlock`) — client-side writes exist somewhere; rogue admins with F12 could extend own subscription. Separate session would be needed.
-- Periodic rule audit recommended — if any rule regresses to `allow read/write: if true`, defenses slip quietly.
-
----
-
-## Deploy sequence on Blaze activation day
-
-Per school, in this exact order:
+Do this per school. First school is NLG (pilot).
 
 ```bash
-# 1. Set HMAC secret (same random value shared across all schools, once)
-openssl rand -base64 48 > /tmp/hmac-secret.txt
-firebase functions:secrets:set HMAC_SECRET --project <SID> --data-file /tmp/hmac-secret.txt
+# 1. Firebase console → upgrade NLG to Blaze
 
-# 2. Deploy functions
-firebase deploy --only functions --project <SID>
+# 2. Set the shared HMAC secret
+openssl rand -base64 48 > /tmp/hmac.txt
+firebase functions:secrets:set HMAC_SECRET --project schoolconnect-nlg --data-file /tmp/hmac.txt
+# (repeat the same value for every school)
 
-# 3. Deploy the tightened rules
-./deploy-school.sh --rules-only schools/<SID>.json
+# 3. Deploy functions
+firebase deploy --only functions --project schoolconnect-nlg
 
-# After all schools done
-rm /tmp/hmac-secret.txt
+# 4. Open vendor-app in browser:
+#    - Log in with ludoskyazon@gmail.com — setSaaSMasterClaim fires
+#    - Claim set + token refreshed
+
+# 5. Deploy rules (rules require the claim to be set — do this AFTER step 4)
+./deploy-school.sh --rules-only schools/schoolconnect-nlg.json
+
+# 6. Deploy hosting (E4 + E5 client changes)
+./deploy-school.sh --hosting-only schools/schoolconnect-nlg.json
+
+# 7. Create FedaPay webhook for NLG in FedaPay dashboard:
+#    https://us-central1-schoolconnect-nlg.cloudfunctions.net/fedapayWebhook
+#    Copy the signing secret FedaPay gives you back
+
+# 8. Set the webhook secret
+firebase functions:secrets:set FEDAPAY_WEBHOOK_SECRET --project schoolconnect-nlg
+
+# 9. Re-deploy functions to bind the new secret
+firebase deploy --only functions --project schoolconnect-nlg
+
+# 10. Test:
+#    - Log in to RT-SC as admin
+#    - Try (DevTools): setDoc on /ecole/subscription.deadline
+#      → should fail with permission-denied
+#    - Pay via FedaPay sandbox → webhook extends deadline
+#    - Vendor-app shows updated deadline
+
+# Repeat for each subsequent school.
+rm /tmp/hmac.txt
 ```
 
-**Order matters**: deploy functions BEFORE rules. The tightened rules
-require `findEleveIdentity` to be live, otherwise éleve signup + parent
-login break during the gap. Deploying the client is independent and
-can happen any time before, during, or after.
+## Adding a new school post-E5
 
----
+The new script handles most of it:
 
-## Testing checklist (post-Blaze deploy)
-
-1. **Prof signup** (pre-activation): new prof submits with correct `passkeyProf` → created as `en_attente`. Unchanged flow.
-2. **Admin approves prof**: statut flips to actif → `onProfActivated` fires → prof doc gets `loginPasskey` stamped → activation email arrives WITHOUT the code in it, with "ask your administrator" language. Admin sees the code in their own Profs tab UI via the migration button or future per-prof detail.
-3. **Prof login flow**: new prof arrives at prof login → gate prompts for email + personal code → admin hands over code verbally → prof types both → gate unlocks → regular Firebase Auth email+password below.
-4. **Prof self-rotation**: prof in Mon profil → Régénérer mon code → modal shows new code immediately on screen. Notification email (no code) arrives. Toast says "nouveau code généré" (no mention of email).
-5. **Admin migration for pending-migration profs**: admin clicks "Générer les codes manquants" → per-prof progress → all success → candidates list empties. Each prof gets their notification email; admin reads each code from the per-prof result rows and communicates them.
-6. **Éleve signup**: student types correct identity → server returns class name + passkey → displayed. Wrong identity → "identité introuvable." No client-side scan attempted.
-7. **Parent login**: valid passkey → server returns full child info → anon signin → session populated.
-8. **Rate limiting**: hammer `findEleveIdentity` 11+ times in 15min → "Trop de tentatives."
-9. **Stale passkey expiry**: (wait 90+ days or manually mutate `lastLoginAt`) → scheduled job clears passkey, notifies prof.
-10. **F12 defense**: logged-in admin, in devtools console, try `setDoc(doc(db, 'professeurs/<otherUid>'), {loginPasskey: '000000'}, {merge: true})` → fails with permission-denied (E3 rule blocks that field).
-11. **Gate re-prompt**: unlock gate → close tab → reopen → gate prompts again. Same prof, same device. Tab stays open 5h → gate re-prompts on next interaction.
-
----
-
-## Rollback procedures (if something goes wrong post-deploy)
-
-### All server functions
 ```bash
-firebase functions:delete verifyProfLogin findEleveIdentity regenerateOwnPasskey regeneratePasskeyForProf onProfActivated onProfDeleteCascade onClasseDelete onEleveDeleteCascade onPreInscriptionDelete expireStalePasskeys --project <SID> --force
+# Create Firebase project in console first (manual)
+# Then:
+./scripts/onboard-new-school.sh
+# Follow the prompts.
+
+# When it finishes, do the manual steps:
+# - Upgrade new school to Blaze
+# - Create FedaPay webhook in FedaPay dashboard
+# - Set FEDAPAY_WEBHOOK_SECRET for new school
+# - Bootstrap via vendor-app (Login with ludoskyazon@gmail.com,
+#   then BootstrapScreen, submit form)
+# - ./deploy-school.sh schools/<new-pid>.json (full deploy)
 ```
-Clients will now fail at the gate with no way through. Revert client to pre-E4 commits if needed.
+
+No rules editing, no UID hunting, no code changes. The custom claim
+approach makes the new-school flow mostly GUI-driven.
+
+## Getting new improvements onto existing schools
+
+Existing schools don't auto-update. After an RT-SC code change:
+
+```bash
+# Quick one-liner to push hosting + rules to all schools
+for config in schools/*.json; do
+  ./deploy-school.sh "$config"
+done
+
+# Or functions only
+for pid in schoolconnect-nlg schoolconnect-mag schoolconnect-houeto schoolconnect-1adfa; do
+  firebase deploy --only functions --project "$pid"
+done
+```
+
+---
+
+## F12 defenses — what's now enforced server-side
+
+Post-E5:
+
+| Attack | Defense | Where |
+|---|---|---|
+| Extend own subscription via DevTools `setDoc` | Rule rejects: only SaaSMaster writes `deadline` | firestore.rules line ~170 |
+| Flip off `isManualLock` via DevTools | Rule rejects: only SaaSMaster writes `isManualLock` | same |
+| Work around a locked school by skipping SubscriptionGuard | Rule rejects: every write requires `isUnlocked()` | firestore.rules (everywhere) |
+| Promote self to admin via DevTools | Rule rejects: `role` blocked from admin updates | firestore.rules line ~385 |
+| Stamp own passkey to a known value | Rule rejects: Session E credential fields blocked | firestore.rules same block |
+| Scan eleves collectionGroup from client | Rule rejects: staff-only | firestore.rules line ~55 |
+| Spoof FedaPay webhook | Server rejects: HMAC signature verification | fedapayWebhook.ts |
+| Trigger another school's deadline extension via shared FedaPay account | Server ignores: school_id metadata filter | fedapayWebhook.ts |
+
+### What's still not enforced server-side (accepted risk)
+
+- A rogue admin with real credentials can desactivate other admins. SaaSMaster (vendor-app) is the recovery path.
+- `rv_counters` is world-writable. Low-stakes data; moving to server-side would need a Cloud Function, deferred.
+- Signed-in anonymous users (éleves) can claim another éleve's session via F12 IF they know the classeId + eleveId. Moving to Cloud Function mint-custom-token flow is deferred (Phase 6g turn 1 notes it as medium priority).
+
+These three are the remaining gaps. Not in Session E scope. Potentially a future Session F if needed.
+
+---
+
+## Rollback procedures
 
 ### Rules only
 ```bash
-git revert <E3-rules-commit-sha>
-./deploy-school.sh --rules-only schools/<SID>.json
+git revert <E5-rules-commit-sha>
+./deploy-school.sh --rules-only schools/<sid>.json
 ```
-Restores `allow read: if true` on eleves collection group. Signup/parent login work via direct scan again. Server functions still work but the tightened rule relaxation is undone.
+Restores pre-E5 rules. SaaSMaster by UID again. F12 extension of deadline possible again. Only useful if the custom claim isn't working for some reason.
 
-### Client only
-Revert to the commit before E4 (E3 final state). Fallbacks return. But the tightened rules will reject the fallback collectionGroup scan, so unless rules are also rolled back, the signup/parent paths stay broken on the client. Full rollback = client + rules together.
+### setSaaSMasterClaim + vendor-app
+```bash
+git revert <E5-vendor-app-commit-sha>
+# Redeploy vendor-app (separate from RT-SC hosting)
+```
+Vendor-app reverts to pre-E5 state. But rules are still E5 unless reverted separately, so without the claim, vendor-app writes fail. Pair with rules rollback for clean rollback.
+
+### LockedPage
+```bash
+git revert <E5-lockedpage-commit-sha>
+./deploy-school.sh --hosting-only schools/<sid>.json
+```
+Restores the F12-bypassable flow. Don't do this unless absolutely necessary — combine with rules rollback.
+
+### Everything
+Revert the whole E5 commit on main. Redeploy everywhere. Subscription enforcement degrades to client-side only.
 
 ---
 
-## Where Session E ends
-
-After E4, Session E is considered **done**. Any future work on the auth/security front is a new session:
-
-- **Session F (hypothetical)**: visibilitychange re-prompt in gate, for stronger PWA background scenarios
-- **Session G (hypothetical)**: subscription lock tightening (the `isManualLock` client-writable concern from audit)
-- **Session H (hypothetical)**: rule audit tooling — catch regressions via CI if rules regress to overly-permissive
-
-None of these are committed-to. They're notes for future planning.
-
-Last updated: 23 April 2026 — Session E4 complete (ship phase, Blaze activation pending).
+Last updated: 23 April 2026 — E5 complete, ready for Blaze activation.

@@ -3,12 +3,49 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ══════════════════════════════════════════════════════════
-    // 🔐 SECURITY FUNCTIONS
+    // 🔐 SECURITY FUNCTIONS (Session E5 consolidated)
     // ══════════════════════════════════════════════════════════
+    //
+    // E5 changes from the previous rules file:
+    //   - isSaaSMaster() now checks a custom claim instead of a
+    //     hardcoded UID, so no per-school rules editing is needed
+    //     when you add a school. The claim is set by the
+    //     setSaaSMasterClaim Cloud Function when you log in to the
+    //     vendor-app with ludoskyazon@gmail.com (email_verified
+    //     required).
+    //   - isActiveStaff() and isActiveAdmin() require statut=='actif'
+    //     in addition to the role/auth check. Closes the loophole
+    //     where a prof whose account was disabled could still pass
+    //     isStaff() because the rule only checked auth state.
+    //   - isUnlocked() — new. Returns true when the school's
+    //     subscription is within deadline+grace AND not manually
+    //     locked. Applied to every data-write rule so a locked
+    //     school cannot be worked around via F12.
+    //   - /ecole/subscription write rule now restricts admins to
+    //     only the hasRequestedUnlock:true self-service flag —
+    //     deadline/isManualLock are SaaSMaster-only. Carried over
+    //     from the firestore-6g.rules that Ludosky wrote during
+    //     the Phase 6g security-todo turn.
+    //   - /professeurs write rule now blocks admins from modifying
+    //     the `role` field. Prevents a compromised admin from
+    //     self-promoting or promoting an accomplice. Session E's
+    //     loginPasskey/Version/lastLoginAt field blocks are
+    //     preserved.
+    //   - preinscriptionsOpen() default changed from open to
+    //     closed when the config doc is missing. Safer default
+    //     for fresh schools that haven't configured pre-inscriptions.
 
     function isStaff() {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // Active staff — has a prof doc AND statut == 'actif'. Used for
+    // writes where a disabled prof shouldn't be able to act.
+    function isActiveStaff() {
+      return isStaff()
+        && exists(/databases/$(database)/documents/professeurs/$(request.auth.uid))
+        && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.statut == 'actif';
     }
 
     function isAdmin() {
@@ -16,9 +53,44 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isActiveAdmin() {
+      return isActiveStaff()
+        && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isCaissier() {
+      return isStaff()
+        && get(/databases/$(database)/documents/professeurs/$(request.auth.uid)).data.role == 'caissier';
+    }
+
+    // SaaSMaster — checked via custom claim, NOT hardcoded UID.
+    // The claim is set by the setSaaSMasterClaim Cloud Function
+    // when Ludosky logs in with the verified email. If you need
+    // to migrate a project before the function is deployed, the
+    // bootstrap in vendor-app sets the claim on first login.
     function isSaaSMaster() {
       return request.auth != null
-        && request.auth.token.email == 'ludoskyazon@gmail.com';
+        && request.auth.token.saasMaster == true;
+    }
+
+    // Subscription lock check. Reads /ecole/subscription.
+    //   - isManualLock true → locked
+    //   - deadline + 3 days grace expired → locked
+    //   - missing doc → locked (fail-safe)
+    //
+    // Admins can't work around a locked school via F12: every
+    // write-producing rule below requires isUnlocked().
+    // SaaSMaster bypasses this check explicitly in rules that use
+    // (isUnlocked() || isSaaSMaster()).
+    function isUnlocked() {
+      let subPath = /databases/$(database)/documents/ecole/subscription;
+      return exists(subPath)
+        && get(subPath).data.isManualLock != true
+        && (
+          !('deadline' in get(subPath).data)
+          || get(subPath).data.deadline == null
+          || request.time < get(subPath).data.deadline.toMillis() + duration.value(3, 'd')
+        );
     }
 
     function isStudentOf(classeId, eleveId) {
@@ -26,34 +98,30 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/classes/$(classeId)/eleves/$(eleveId)).data.active_session_uid == request.auth.uid;
     }
 
-    function preinscriptionsOpen() {
-      // Default OPEN when the field is missing (backward compat).
-      // Explicit `false` is the ONLY way to close.
-      //
-      // If /settings_inscription/config does not exist at all (brand-new
-      // school before admin touches settings), treat as open too.
-      let cfgPath = /databases/$(database)/documents/settings_inscription/config;
-      return !exists(cfgPath)
-        || get(cfgPath).data.get('preinscriptionsOuvertes', true) == true;
-    }
-
     function isParentOf(classeId, eleveId) {
       return request.auth != null
         && get(/databases/$(database)/documents/classes/$(classeId)/eleves/$(eleveId)).data.active_parent_session_uid == request.auth.uid;
     }
 
+    // Pre-inscriptions gate. Default CLOSED when the config doc is
+    // missing (changed from open in E5 — safer default).
+    function preinscriptionsOpen() {
+      let cfgPath = /databases/$(database)/documents/settings_inscription/config;
+      return exists(cfgPath)
+        && get(cfgPath).data.get('preinscriptionsOuvertes', false) == true;
+    }
+
+    // Shorthand: any kind of active write authority that isn't
+    // blocked by a school lock. SaaSMaster bypasses the lock.
+    function canWriteSchoolData() {
+      return (isActiveStaff() && isUnlocked()) || isSaaSMaster();
+    }
+
     // ══════════════════════════════════════════════════════════
-    // 🔍 COLLECTION GROUP READS
+    // 🔍 COLLECTION GROUP READS (E3)
     // ══════════════════════════════════════════════════════════
 
     match /{path=**}/eleves/{eleveId} {
-      // Session E3 — tightened from `allow read: if true` to staff-only.
-      // Éleve signup and parent login no longer scan this collection
-      // group from the client; they call the `findEleveIdentity`
-      // Cloud Function which uses admin SDK (bypasses rules). Staff
-      // tooling (school-wide éleve list, finances terminal, school
-      // analytics) still needs the collection group read, so we
-      // keep it open for isStaff().
       allow read: if isStaff();
     }
 
@@ -62,66 +130,94 @@ service cloud.firestore {
     match /{path=**}/absences/{absenceId}   { allow read: if isStaff(); }
     match /{path=**}/paiements/{paiementId} { allow read: if isStaff(); }
 
-    // Civisme v3 — collection-group read for /quetes/{q}/claims/{c}.
     match /{path=**}/claims/{claimId} {
       allow read: if request.auth != null;
     }
 
-    // Civisme v3 (Phase 3) — collection-group read for civisme
-    // history (used by parent widget, student historique, admin audit).
     match /{path=**}/civismeHistory/{entryId} {
       allow read: if request.auth != null;
     }
 
     // ══════════════════════════════════════════════════════════
-    // 🏫 SCHOOL CONFIG & GLOBAL SETTINGS
+    // 🏫 SUBSCRIPTION (ELEVATED — billing surface)
     // ══════════════════════════════════════════════════════════
+    //
+    // This block MUST come before the generic /ecole/{document=**}
+    // catch-all so Firestore picks the specific rule first.
+    //
+    // Admins can ONLY flip hasRequestedUnlock → true (the manual
+    // payment-reported flow). All other fields are SaaSMaster-only.
+    // LockedPage's post-FedaPay handler writes hasRequestedUnlock:true;
+    // the actual deadline extension happens server-side via the
+    // fedapayWebhook Cloud Function (admin SDK, bypasses rules).
 
     match /ecole/subscription {
       allow read: if true;
-      allow write: if isAdmin() || isSaaSMaster();
+
+      allow create: if isSaaSMaster() || (
+        isActiveAdmin()
+        && request.resource.data.keys().hasOnly(['hasRequestedUnlock'])
+        && request.resource.data.hasRequestedUnlock == true
+      );
+
+      allow update: if isSaaSMaster() || (
+        isActiveAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['hasRequestedUnlock'])
+        && request.resource.data.hasRequestedUnlock == true
+      );
+
+      allow delete: if isSaaSMaster();
     }
+
+    // ══════════════════════════════════════════════════════════
+    // 🏫 OTHER /ecole/** DOCS
+    // ══════════════════════════════════════════════════════════
+    //
+    // Reads public (welcome page shows school name/info even when
+    // locked). Writes require active-admin + unlock, or SaaSMaster.
+
     match /ecole/{document=**} {
       allow read: if true;
-      allow write: if isAdmin() || isSaaSMaster();
+      allow write: if canWriteSchoolData() && isActiveAdmin();
     }
+
     match /system/{document=**} {
       allow read: if true;
-      allow write: if isAdmin() || isSaaSMaster();
+      allow write: if canWriteSchoolData() && isActiveAdmin();
     }
 
     match /settings_inscription/{document=**} {
       allow read: if true;
-      allow write: if isAdmin() || isSaaSMaster();
+      allow write: if canWriteSchoolData() && isActiveAdmin();
     }
 
     // ══════════════════════════════════════════════════════════
     // 📝 PRE-INSCRIPTIONS
     // ══════════════════════════════════════════════════════════
+    //
+    // Public anonymous writes — admin must explicitly enable via
+    // preinscriptionsOpen(). Default in E5 is closed (safer).
+    // Pre-inscriptions can happen even while a school is locked
+    // because they're revenue-generating (parents can still book
+    // appointments, school can process later).
 
     match /pre_inscriptions/{piId} {
-      // Anyone can create a pre-inscription, BUT only when the admin
-      // has not closed the gate. Server-enforced — F12 bypass is useless
-      // because Firestore evaluates this rule on write, not on render.
       allow create: if preinscriptionsOpen();
-
       allow read: if true;
 
-      allow update: if isStaff() || (
+      allow update: if isActiveStaff() || (
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['dateRV', 'reprogCount']) &&
         resource.data.statut == 'Approuvé' &&
         request.resource.data.reprogCount == resource.data.reprogCount + 1
       );
 
-      allow delete: if isStaff();
+      allow delete: if isActiveStaff();
 
       match /documents/{docId} {
-        // Uploaded documents — same gate as the parent doc. Without
-        // this, an attacker could skip the parent create and still
-        // spam document subcollections with garbage payloads.
         allow create: if preinscriptionsOpen();
-        allow read, write: if isStaff();
+        allow read, write: if isActiveStaff();
       }
     }
 
@@ -136,18 +232,16 @@ service cloud.firestore {
 
     match /archived_absences/{id} {
       allow read: if isStaff();
-      allow create, update: if isStaff();
-      allow delete: if isStaff();
+      allow create, update, delete: if canWriteSchoolData();
     }
 
     match /archive/{annee} {
       allow read: if isStaff();
-      allow create, update: if isStaff();
-      allow delete: if isStaff();
+      allow create, update, delete: if canWriteSchoolData();
 
       match /{path=**} {
         allow read: if isStaff();
-        allow write: if isStaff();
+        allow write: if canWriteSchoolData();
       }
     }
 
@@ -157,53 +251,56 @@ service cloud.firestore {
 
     match /classes/{document=**} {
       allow read: if true;
-      allow write: if isStaff();
+      allow write: if canWriteSchoolData();
     }
     match /annonces/{document=**} {
       allow read: if true;
-      allow write: if isStaff();
+      allow write: if canWriteSchoolData();
     }
     match /annonces_globales/{document=**} {
       allow read: if true;
-      allow write: if isStaff();
+      allow write: if canWriteSchoolData();
     }
     match /school_codes/{document=**} {
       allow read: if true;
-      allow write: if isStaff();
+      allow write: if canWriteSchoolData();
     }
     match /emploisDuTemps/{document=**} {
       allow read: if true;
-      allow write: if isStaff();
+      allow write: if canWriteSchoolData();
     }
     match /seances/{document=**} {
       allow read: if true;
-      allow write: if isStaff();
+      allow write: if canWriteSchoolData();
     }
     match /annales/{document=**} {
       allow read: if true;
-      allow write: if isStaff();
+      allow write: if canWriteSchoolData();
     }
     match /vigilance_ia/{document=**} {
-      allow read, write: if isStaff();
+      allow read: if isStaff();
+      allow write: if canWriteSchoolData();
     }
 
     // ══════════════════════════════════════════════════════════
-    // 🏆 CIVISME v3 — catalog + quetes + reclamations
+    // 🏆 CIVISME v3
     // ══════════════════════════════════════════════════════════
 
-    // Récompenses catalog (Phase 1)
     match /recompenses/{recompenseId} {
       allow read: if request.auth != null;
-      allow create, update, delete: if isAdmin() || isSaaSMaster();
+      allow create, update, delete: if canWriteSchoolData() && (isActiveAdmin() || isSaaSMaster());
     }
 
-    // Quêtes (Phase 2)
     match /quetes/{questId} {
       allow read: if request.auth != null;
-      allow create, delete: if isAdmin() || isSaaSMaster();
+      allow create, delete: if canWriteSchoolData() && (isActiveAdmin() || isSaaSMaster());
 
-      allow update: if (isAdmin() || isSaaSMaster()) || (
+      // Students can claim quests — constrained update (slotsTaken/
+      // slotsValidated can only increase, limited field set).
+      // Admins with full unlock can do anything.
+      allow update: if (canWriteSchoolData() && (isActiveAdmin() || isSaaSMaster())) || (
         request.auth != null &&
+        isUnlocked() &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['slotsTaken', 'slotsValidated', 'statut', 'updatedAt']) &&
         request.resource.data.slotsTaken >= resource.data.slotsTaken &&
@@ -212,38 +309,31 @@ service cloud.firestore {
 
       match /claims/{claimId} {
         allow read: if request.auth != null;
-        allow create: if request.auth != null;
-        allow update: if isAdmin() || isSaaSMaster();
-        allow delete: if isAdmin() || isSaaSMaster();
+        // Anyone authenticated can claim (students claim their own);
+        // must be unlocked.
+        allow create: if request.auth != null && isUnlocked();
+        allow update, delete: if canWriteSchoolData() && (isActiveAdmin() || isSaaSMaster());
       }
     }
 
-    // Réclamations de récompenses (Phase 3)
-    //   - read: anyone signed in (PII exposure is no higher than
-    //     the eleves collection-group which is already public)
-    //   - create: anyone signed in (student/prof/admin; affordability
-    //     enforced client-side + by fulfillment transaction which
-    //     re-checks balance before debiting)
-    //   - update/delete: admin only (fulfill + cancel workflows)
     match /reclamations/{reclamationId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if isAdmin() || isSaaSMaster();
+      allow create: if request.auth != null && isUnlocked();
+      allow update, delete: if canWriteSchoolData() && (isActiveAdmin() || isSaaSMaster());
     }
 
-    // Parent directory — two-chair lock
     match /annuaire_parents/{docId} {
       allow read: if request.auth != null;
 
       allow create, update: if request.auth != null
+        && isUnlocked()
         && request.resource.data.eleveId != null
         && (docId == request.resource.data.eleveId + '_parent1'
             || docId == request.resource.data.eleveId + '_parent2');
 
-      // Parents can delete their own slot (same doc-id constraint as
-      // create/update). Staff can delete any entry for moderation.
-      allow delete: if isStaff() || (
+      allow delete: if (isActiveStaff() && isUnlocked()) || (
         request.auth != null
+        && isUnlocked()
         && resource.data.eleveId != null
         && (docId == resource.data.eleveId + '_parent1'
             || docId == resource.data.eleveId + '_parent2')
@@ -257,95 +347,90 @@ service cloud.firestore {
     match /classes/{classeId}/eleves/{eleveId} {
       allow read: if true;
 
-      allow update: if (
-        request.auth != null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active_session_uid'])
-        && request.resource.data.active_session_uid == request.auth.uid
-      ) || (
-        request.auth != null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active_parent_session_uid'])
-        && request.resource.data.active_parent_session_uid == request.auth.uid
-      ) || (
-        request.auth != null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['englishStreak', 'lastEnglishQuiz'])
-      ) || (
-        // Civisme v3 — civismePoints mutations. Staff (admin + prof)
-        // can update it within the same transactions that write
-        // civismeHistory entries: quest validation, reclamation
-        // fulfillment, incident reports, manual ±1 adjustments.
-        isStaff()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['civismePoints'])
+      // Restricted updates — session handshakes, english streaks,
+      // civisme points. All require unlock.
+      allow update: if isUnlocked() && (
+        (
+          request.auth != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active_session_uid'])
+          && request.resource.data.active_session_uid == request.auth.uid
+        ) || (
+          request.auth != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active_parent_session_uid'])
+          && request.resource.data.active_parent_session_uid == request.auth.uid
+        ) || (
+          request.auth != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['englishStreak', 'lastEnglishQuiz'])
+        ) || (
+          isActiveStaff()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['civismePoints'])
+        )
       );
 
-      allow write: if isStaff();
+      // Full staff write (CRUD beyond update) — unlocked + active staff
+      // OR SaaSMaster.
+      allow create, delete: if canWriteSchoolData();
+      // Broader update fallback for staff touching multiple fields
+      allow update: if canWriteSchoolData();
 
       match /absences/{document=**} {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
 
-        allow create: if isStaff()
-                      || isStudentOf(classeId, eleveId)
-                      || isParentOf(classeId, eleveId);
+        allow create: if isUnlocked() && (
+          isActiveStaff()
+          || isStudentOf(classeId, eleveId)
+          || isParentOf(classeId, eleveId)
+        );
 
-        allow update, delete: if isStaff();
+        allow update, delete: if canWriteSchoolData();
       }
 
       match /paiements/{document=**} {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
-        allow write: if isStaff();
+        allow write: if canWriteSchoolData();
       }
 
       match /notes/{document=**} {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
-        allow write: if isStaff();
+        allow write: if canWriteSchoolData();
       }
 
       match /bulletins/{document=**} {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
-        allow write: if isStaff();
+        allow write: if canWriteSchoolData();
       }
 
       match /colles/{document=**} {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
-        allow write: if isStaff();
+        allow write: if canWriteSchoolData();
       }
 
-      // Civisme history — Phase 3
-      // Written during transactions that mutate civismePoints: quest
-      // validation (admin), reclamation fulfillment (admin), and
-      // incident reports (admin or prof). Read by the student, their
-      // parents, and any staff.
-      //
-      // Writes permitted to any staff — profs need this to report
-      // incidents for students in their classes. Abuse is deterred
-      // by the audit trail: every entry is stamped with parUid and
-      // parNom, and history is read-visible to students + parents,
-      // so anomalous entries surface quickly.
       match /civismeHistory/{entryId} {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
-        allow create, update, delete: if isStaff();
+        allow create, update, delete: if canWriteSchoolData();
       }
     }
 
     // ══════════════════════════════════════════════════════════
-    // 📰 CMS (À propos, UID-gated)
+    // 📰 CMS (À propos) — Ludosky-only
     // ══════════════════════════════════════════════════════════
 
     match /cms/{docId} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && request.auth.uid == "ARCosTxTeZYvk9cj548mnRzaYKG2";
+      // CMS edits always allowed for SaaSMaster regardless of school lock.
+      allow write: if isSaaSMaster();
     }
 
     // ══════════════════════════════════════════════════════════
@@ -353,35 +438,48 @@ service cloud.firestore {
     // ══════════════════════════════════════════════════════════
 
     match /professeurs/{userId} {
+      // Self-signup creates a pending account. No unlock check here —
+      // a school with an expired deadline can still receive new prof
+      // signups (they sit in en_attente until admin renews + approves).
       allow create: if request.auth != null
                     && request.auth.uid == userId
                     && request.resource.data.statut == 'en_attente';
 
-      // Admins and the SaaS master can update any field on any prof,
-      // EXCEPT the three Session-E-managed credential fields
-      // (loginPasskey, loginPasskeyVersion, lastLoginAt). Those are
-      // written exclusively by Cloud Functions via the admin SDK
-      // (which bypasses rules entirely). Blocking them here defends
-      // against devtools shenanigans — an admin can't F12 and stamp
-      // themselves a known passkey.
-      allow update: if (
-                      (isAdmin() || isSaaSMaster())
-                      && !request.resource.data.diff(resource.data).affectedKeys()
-                           .hasAny(['loginPasskey', 'loginPasskeyVersion', 'lastLoginAt'])
-                    )
-                       // Session 7.3 — self-write to the `signature`
-                       // field only. Exact field-set check via
-                       // diff().affectedKeys() so a malicious prof
-                       // can't sneak in a role change alongside a
-                       // signature update.
-                    || (
-                      request.auth != null
-                      && request.auth.uid == userId
-                      && request.resource.data.diff(resource.data).affectedKeys()
-                           .hasOnly(['signature'])
-                    );
+      // Admin updates — blocked fields:
+      //   - loginPasskey, loginPasskeyVersion, lastLoginAt (Session E,
+      //     written only by Cloud Functions admin-SDK)
+      //   - role (Session E5 — prevents admin self-promotion or
+      //     accomplice promotion)
+      //
+      // The `role` block means the role, once set by a Cloud Function
+      // or by SaaSMaster, cannot be changed by anyone else. Demotion
+      // + re-promotion goes through SaaSMaster (vendor app).
+      //
+      // Admins can modify statut (to toggle actif / en_attente /
+      // desactive for the approval workflow). A rogue admin could
+      // desactivate all other admins, but SaaSMaster is always a
+      // recovery path.
+      allow update: if isSaaSMaster() || (
+        canWriteSchoolData()
+        && isActiveAdmin()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['loginPasskey', 'loginPasskeyVersion', 'lastLoginAt', 'role'])
+      ) || (
+        // Self-signature write (Session 7.3) — always allowed
+        // regardless of school lock since it's a prof configuring
+        // their own doc and we don't want to hold them hostage to
+        // billing. statut still must be actif (via isActiveStaff()).
+        isActiveStaff()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['signature'])
+      );
 
-      allow delete: if isAdmin() || isSaaSMaster();
+      allow delete: if isSaaSMaster() || (
+        canWriteSchoolData()
+        && isActiveAdmin()
+      );
+
       allow read: if request.auth != null;
     }
   }

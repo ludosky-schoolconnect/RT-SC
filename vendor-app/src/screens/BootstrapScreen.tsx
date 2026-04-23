@@ -156,7 +156,7 @@ export function BootstrapScreen() {
       supportWhatsAppNumber: supportWhatsAppNumber.replace(/\D/g, '') || undefined,
     }
     try {
-      const result = await bootstrapSchool(firebase.auth, firebase.db, input)
+      const result = await bootstrapSchool(firebase.app, firebase.auth, firebase.db, input)
       // Auto sign-in the freshly-created admin so the vendor lands in
       // the Command Center already authenticated for that school.
       const cred = await signInWithEmailAndPassword(

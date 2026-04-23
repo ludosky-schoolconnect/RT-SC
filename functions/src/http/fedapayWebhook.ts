@@ -39,6 +39,12 @@ const FEDAPAY_WEBHOOK_SECRET = defineSecret('FEDAPAY_WEBHOOK_SECRET')
  * Shape of the FedaPay webhook payload. Loosely typed because
  * FedaPay evolves without notice — we read only the fields we care
  * about.
+ *
+ * Session E5: `custom_metadata.school_id` is set by LockedPage on
+ * widget init so the webhook can filter events by the originating
+ * school. Critical when one FedaPay account serves multiple school
+ * Firebase projects: without filtering, every school's webhook
+ * receives events from every other school's payments.
  */
 interface FedaPayEvent {
   event?: string // e.g. "transaction.approved"
@@ -48,6 +54,9 @@ interface FedaPayEvent {
       id?: number | string
       amount?: number
       reference?: string
+      custom_metadata?: {
+        school_id?: string
+      }
     }
   }
 }
@@ -121,6 +130,51 @@ export const fedapayWebhook = onRequest(
         status,
       })
       res.status(200).send('ok (ignored)')
+      return
+    }
+
+    // Session E5 — per-school metadata filtering.
+    //
+    // All schools share ONE FedaPay account, which means FedaPay
+    // fires the same event on every webhook configured on that
+    // account. This function is deployed per school (each school
+    // = its own Firebase project = its own function URL), so
+    // without filtering, school A's function would extend school
+    // A's deadline every time a parent of school B pays. That's
+    // the bug E5 closes.
+    //
+    // The client (LockedPage) puts the originating project ID in
+    // the transaction's custom_metadata.school_id. Here we compare
+    // it to this function's own project ID. Mismatch → return 200
+    // + ignore (the 200 is important: FedaPay retries non-2xx
+    // responses, so a 4xx here would cause unnecessary retries
+    // for every school except the intended one).
+    //
+    // Missing metadata is also ignored — legacy transactions
+    // created before E5 deployed would arrive without the field,
+    // and we don't want to accidentally credit the wrong school.
+    // Admins whose first post-E5 payment lacks metadata will need
+    // to use the manual vendor-app unlock path.
+    const projectId =
+      process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT ?? ''
+    const metaSchoolId = event.data?.object?.custom_metadata?.school_id
+
+    if (!metaSchoolId) {
+      logger.info('fedapayWebhook: event ignored (no school_id metadata)', {
+        transactionId: event.data?.object?.id,
+        projectId,
+      })
+      res.status(200).send('ok (no metadata)')
+      return
+    }
+
+    if (metaSchoolId !== projectId) {
+      logger.info('fedapayWebhook: event ignored (school_id mismatch)', {
+        transactionId: event.data?.object?.id,
+        metaSchoolId,
+        projectId,
+      })
+      res.status(200).send('ok (other school)')
       return
     }
 

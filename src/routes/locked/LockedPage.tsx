@@ -10,22 +10,25 @@
  * What this page does:
  *   1. Displays the current subscription status (deadline, price)
  *   2. Loads FedaPay SDK on demand
- *   3. "Payer maintenant" opens the FedaPay widget INLINE (option B
- *      from Phase 6f scoping)
- *   4. On successful payment: runs fairness logic (extend from deadline
- *      if early, from today if late) via usePayAndExtendSubscription,
- *      then navigates back to the dashboard with `?paid=true` so the
- *      SubscriptionGuard's 5s bypass window lets the user in before
- *      the updated subscription doc has propagated
+ *   3. "Payer maintenant" opens the FedaPay widget INLINE, tagged
+ *      with this school's project ID as custom_metadata.school_id
+ *   4. On successful payment: flips hasRequestedUnlock:true as a
+ *      UX nudge. The actual deadline extension happens server-side
+ *      via the fedapayWebhook Cloud Function (FedaPay posts a
+ *      signed event, webhook verifies + writes with admin SDK).
+ *      SubscriptionGuard's onSnapshot picks up the new deadline and
+ *      auto-redirects.
  *   5. Fallback: "J'ai déjà payé (autre moyen)" → flips
  *      hasRequestedUnlock=true so Ludosky sees the alert and can
  *      manually unlock after verifying the cash/bank payment
  *   6. "Se déconnecter" — admin can log out and hand control to a
  *      different admin if they want
  *
- * Security: this page is ONLY reachable for locked schools. If the
- * school is NOT locked (e.g. admin navigated here manually), we show
- * a "déjà actif" state with a link back to the dashboard.
+ * Security: F12-proof. Firestore rules (Session E5) restrict
+ * `deadline` and `isManualLock` writes to SaaSMaster identity only.
+ * Admins can only flip `hasRequestedUnlock` to true. The webhook
+ * runs with admin-SDK credentials, bypassing rules, and is the only
+ * trusted path to extend a deadline.
  */
 
 import { useEffect, useState } from 'react'
@@ -49,7 +52,6 @@ import { useConfirm } from '@/stores/confirm'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import {
   useSubscription,
-  usePayAndExtendSubscription,
   useRequestUnlock,
 } from '@/hooks/useSubscription'
 import {
@@ -70,54 +72,42 @@ export default function LockedPage() {
 
   const sub = useSubscription()
   // ════════════════════════════════════════════════════════════════
-  // 🚨 SECURITY TODO — RESTORE BEFORE PRODUCTION DEPLOY
+  // Session E5 — secure subscription renewal path
   // ════════════════════════════════════════════════════════════════
   //
-  // During Phase 6g Turn 1 we removed `usePayAndExtendSubscription`
-  // from this page to close an F12 bypass (admin could extend their
-  // own deadline for free by calling the mutation directly in
-  // DevTools). The secure flow was: onComplete flips
-  // `hasRequestedUnlock: true` only, and Ludosky approves manually
-  // from the vendor app.
+  // The payment flow is F12-proof via a layered design:
   //
-  // BUT Ludosky doesn't have a debit card yet, so we can't deploy
-  // the FedaPay webhook Cloud Function that would make auto-unlock
-  // work securely. Until then, we're developing on localhost with
-  // auto-unlock restored so testing the pay flow is fast.
+  //   1. Admin clicks "Payer" → FedaPay widget opens with
+  //      custom_metadata.school_id = this project's ID
+  //   2. Admin completes payment on FedaPay → FedaPay approves the
+  //      transaction and POSTs a signed webhook to our
+  //      fedapayWebhook Cloud Function
+  //   3. The function verifies the signature, checks school_id
+  //      matches its own project (so one FedaPay account can
+  //      serve multiple schools safely), then writes the new
+  //      deadline via admin SDK (bypassing client-side rules)
+  //   4. Client's onSnapshot listener sees the new deadline →
+  //      SubscriptionGuard auto-redirects to /admin
   //
-  // REVERT STEPS (do all of these on the SAME commit):
-  //   1. Remove `usePayAndExtendSubscription` from this import block
-  //      and remove `const payMut = usePayAndExtendSubscription()`
-  //   2. Change onComplete (see the marked block below) to call
-  //      `await unlockMut.mutateAsync()` instead of
-  //      `await payMut.mutateAsync({})`
-  //   3. Change the success toast back to "Paiement reçu ! Le support
-  //      va confirmer votre paiement sous peu."
-  //   4. Remove the `navigate('/admin?paid=true')` — no auto-bounce
-  //   5. Revert `firestore-6g.rules` to the locked-down subscription
-  //      rule (admin can only write hasRequestedUnlock:true)
-  //   6. Update the pay section copy: "après vérification du support"
-  //   7. Re-read the checklist at 🚨 SECURITY-TODO-BEFORE-DEPLOY.md
-  //      in the repo root
+  // Additionally, onComplete here flips hasRequestedUnlock:true
+  // as a UX nudge — it makes the "your alert was sent" card
+  // appear instantly rather than waiting for webhook delivery.
+  // It's also a fallback: if the webhook is ever slow/failing,
+  // Ludosky still sees the 🔔 in the vendor app and can unlock
+  // manually. Admin-writable via the tightened subscription rule
+  // (only hasRequestedUnlock can be flipped to true).
   //
-  // The Turn 1 zip has the secure version if you need a reference —
-  // `src/routes/locked/LockedPage.tsx` + `firestore-6g.rules`.
-  //
-  // If/when you deploy the webhook Cloud Function (Turn 2), the
-  // webhook server-side-writes the new deadline. At THAT point you
-  // can keep this `payMut` call if you want double-write insurance,
-  // OR revert to the secure `unlockMut` flow and let the webhook do
-  // everything. Webhook-only is cleaner; double-write is safer if
-  // webhook delivery is ever flaky (FedaPay retries up to 9 times).
+  // Firestore rules (E5) restrict `deadline` / `isManualLock`
+  // writes to SaaSMaster identity only. Admins cannot extend
+  // their own subscription via F12 anymore.
   // ════════════════════════════════════════════════════════════════
-  const payMut = usePayAndExtendSubscription()
   const unlockMut = useRequestUnlock()
 
   // "Renew early" mode: admin tapped the renew button from Mon
   // abonnement while their subscription was still healthy. We want to
   // SHOW the pay UI (not the "Déjà actif" fallback) so they can
-  // actually pay. The fairness logic in usePayAndExtendSubscription
-  // will extend from the current deadline, so they don't lose days.
+  // actually pay. The fairness logic in the FedaPay webhook extends
+  // from the current deadline, so they don't lose days.
   const renewEarly = searchParams.get('renew') === 'early'
 
   // Payment flow state — controls the primary button's label
@@ -173,6 +163,15 @@ export default function LockedPage() {
           description: `Renouvellement SchoolConnect${
             ecoleConfig?.nom ? ' — ' + ecoleConfig.nom : ''
           }`,
+          // Session E5 — tag the transaction with this school's
+          // project ID so the fedapayWebhook Cloud Function can
+          // filter events. One FedaPay account serves all schools,
+          // so every school's webhook receives every payment
+          // event — without this metadata, the webhook can't
+          // tell which school's deadline to extend.
+          custom_metadata: {
+            school_id: auth.app.options.projectId ?? '',
+          },
         },
         onComplete: async (resp) => {
           if (!isFedaPayApproved(resp)) {
@@ -183,54 +182,34 @@ export default function LockedPage() {
             return
           }
 
-          // 🚨 SECURITY TODO — this is the F12-bypassable path. See the
-          // big comment block near the top of this file for context
-          // and revert steps. Summary: this mutation writes `deadline`
-          // to Firestore from the client, which is only possible
-          // because we've temporarily loosened the Firestore rule.
-          // Pre-production deploy, we REVERT this block to call
-          // `unlockMut.mutateAsync()` (webhook or manual path handles
-          // deadline).
+          // Session E5 — secure path. We flip hasRequestedUnlock:true
+          // as a UX nudge (alerts Ludosky in vendor-app + makes the
+          // "payment received" card appear instantly). The actual
+          // deadline extension happens server-side via the webhook:
+          // FedaPay posts to fedapayWebhook, which verifies the
+          // signature and writes the new deadline with admin-SDK.
+          //
+          // Writing the deadline from the client would fail anyway
+          // (rules block it) — this mutation just writes the
+          // unlock-request flag, which admin CAN write per the
+          // subscription rule.
           try {
             setPayStatus('processing')
-
-            // Fairness logic lives in the mutation. Extends from
-            // existing deadline if it's in the future (early pay),
-            // otherwise from today (late pay or first ever).
-            await payMut.mutateAsync({})
-
-            // Also flip hasRequestedUnlock: false in case it was true
-            // from a previous flow. (payMut does this already, but
-            // leaving the unlockMut call out is fine.)
-
+            await unlockMut.mutateAsync()
             setPayStatus('success')
-            toast.success('Paiement validé ! Abonnement prolongé.')
-
-            // Short delay so the user can read the success state,
-            // then bounce back to the admin dashboard with ?paid=true.
-            // SubscriptionGuard's 5-second bypass window accepts this
-            // param so we don't get re-routed here by a stale snapshot
-            // before the new deadline propagates.
-            setTimeout(() => {
-              navigate('/admin?paid=true', { replace: true })
-            }, 1500)
+            toast.success(
+              'Paiement reçu ! Déblocage en cours — votre accès sera rétabli sous quelques instants.'
+            )
+            // Do NOT auto-navigate. The webhook will flip
+            // hasRequestedUnlock back to false + extend deadline.
+            // SubscriptionGuard's onSnapshot listener picks up the
+            // new state and redirects automatically once Firestore
+            // propagates (usually 1-3 seconds).
           } catch (err) {
-            // Payment went through FedaPay but the Firestore write
-            // failed. This is rare but high-consequence — school has
-            // paid but is still locked. Fall back to the manual flow:
-            // flip hasRequestedUnlock:true so Ludosky sees the alert
-            // and can unlock from the vendor app.
-            console.error('[LockedPage] extend after payment failed:', err)
-            try {
-              await unlockMut.mutateAsync()
-            } catch {
-              // Double failure — both writes rejected. Shouldn't
-              // happen, but log it and tell the user to contact
-              // support.
-            }
+            console.error('[LockedPage] hasRequestedUnlock write failed:', err)
             setPayStatus('error')
             toast.error(
-              'Paiement reçu mais mise à jour échouée. Le support a été notifié — contactez-le avec votre reçu.'
+              'Paiement reçu côté FedaPay mais enregistrement impossible. Contactez le support avec votre reçu.'
             )
           }
         },
@@ -297,7 +276,7 @@ export default function LockedPage() {
       case 'processing':
         return 'Validation en cours…'
       case 'success':
-        return 'Succès ! Retour à l\'application…'
+        return 'Paiement reçu — déblocage en cours…'
       case 'error':
         return 'Réessayer'
       default:
@@ -429,12 +408,13 @@ export default function LockedPage() {
                   Payez via FedaPay (Mobile Money){' '}
                   {renewEarly
                     ? 'pour prolonger votre abonnement sans interruption'
-                    : 'pour débloquer l\'accès immédiatement'}
+                    : 'pour réactiver votre accès'}
                   . Votre abonnement sera prolongé de{' '}
                   <span className="font-semibold text-navy">
                     {sub.subscriptionDurationMonths} mois
                   </span>
-                  .
+                  . Le déblocage est automatique après confirmation du
+                  paiement par FedaPay.
                 </p>
 
                 <button
