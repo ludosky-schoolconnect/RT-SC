@@ -44,6 +44,7 @@ import { ecoleSecuriteDoc, professeurDoc } from '@/lib/firestore-keys'
 import { useAuth } from '@/stores/auth'
 import { useToast } from '@/stores/toast'
 import { translateAuthError } from '@/lib/auth-errors'
+import { verifyPersonalCode, passkeyErrorMessage } from '@/lib/profPasskey'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -158,23 +159,42 @@ export default function CaisseAuth() {
 function CaisseLoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
   const [showPwd, setShowPwd] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [codeError, setCodeError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [forgotOpen, setForgotOpen] = useState(false)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setCodeError(null)
 
     const cleanEmail = email.trim().toLowerCase()
+    const cleanCode = code.trim()
     if (!cleanEmail || !password) {
       setError('Veuillez remplir email et mot de passe.')
+      return
+    }
+    if (!cleanCode) {
+      setCodeError('Entrez votre code personnel à 6 chiffres.')
       return
     }
 
     setSubmitting(true)
     try {
+      // Session E6 — personal code check runs BEFORE Firebase Auth.
+      // See ProfAuth.tsx for the full rationale. Caissiers use the
+      // same verifyProfLogin callable + 4h sessionStorage bypass
+      // as profs.
+      const verify = await verifyPersonalCode(cleanEmail, cleanCode)
+      if (!verify.ok) {
+        setCodeError(passkeyErrorMessage(verify.reason))
+        setSubmitting(false)
+        return
+      }
+
       await signInWithEmailAndPassword(auth, cleanEmail, password)
       // The parent's useEffect will navigate based on profil.
     } catch (err) {
@@ -222,6 +242,22 @@ function CaisseLoginForm() {
           </IconButton>
         }
         error={error ?? undefined}
+      />
+      <Input
+        label="Code d'accès personnel"
+        type="text"
+        placeholder="123456"
+        value={code}
+        onChange={(e) => {
+          setCode(e.target.value)
+          setCodeError(null)
+        }}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        maxLength={12}
+        leading={<KeyRound className="h-4 w-4" />}
+        error={codeError ?? undefined}
+        hint="Code à 6 chiffres communiqué par l'administration."
       />
 
       <Button type="submit" fullWidth size="lg" loading={submitting}>

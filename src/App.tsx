@@ -21,7 +21,6 @@ import LandingPage from '@/routes/landing/LandingPage'
 import WelcomePage from '@/routes/welcome/WelcomePage'
 import AdminLogin from '@/routes/auth/AdminLogin'
 import ProfAuth from '@/routes/auth/ProfAuth'
-import { ProfPasskeyGate } from '@/routes/auth/ProfPasskeyGate'
 import CaisseAuth from '@/routes/auth/CaisseAuth'
 import PersonnelChoice from '@/routes/auth/PersonnelChoice'
 import EleveChoice from '@/routes/auth/EleveChoice'
@@ -87,19 +86,11 @@ export default function App() {
             <Route path="/auth/personnel" element={<PersonnelChoice />} />
             <Route
               path="/auth/personnel/prof"
-              element={
-                <ProfPasskeyGate>
-                  <ProfAuth />
-                </ProfPasskeyGate>
-              }
+              element={<ProfAuth />}
             />
             <Route
               path="/auth/personnel/caisse"
-              element={
-                <ProfPasskeyGate>
-                  <CaisseAuth />
-                </ProfPasskeyGate>
-              }
+              element={<CaisseAuth />}
             />
 
             {/* Backward compat — anyone hitting /auth/prof lands on

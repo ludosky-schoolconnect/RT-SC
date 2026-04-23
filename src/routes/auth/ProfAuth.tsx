@@ -3,19 +3,28 @@
  *
  * Tabs: Login | Inscription
  *
- * Login flow:
- *   - email + password → Firebase sign-in → AuthProvider sets profil
- *   - useEffect detects role:
+ * Login flow (Session E6 — inline personal code check):
+ *   - User enters email + password + personal 6-digit code
+ *   - Submit calls verifyProfLogin server-side FIRST (validates
+ *     email matches a prof doc + code matches stored loginPasskey +
+ *     rate limit)
+ *   - On success, standard Firebase signInWithEmailAndPassword runs
+ *   - Within the same tab, a 4h sessionStorage bypass skips the
+ *     server call for repeat logins
+ *   - AuthProvider detects role:
  *       * 'prof' + statut 'actif'      → /prof
  *       * 'prof' + statut 'en_attente' → ProtectedRoute redirects to /prof/en-attente
  *       * 'admin' or unknown           → sign out + error
  *
- * Signup flow:
+ * Signup flow (unchanged — does NOT require a personal code since
+ * the prof doesn't have one yet):
  *   1. Validate the school's passkeyProf (read ecole/securite) BEFORE creating account
  *   2. createUserWithEmailAndPassword
  *   3. Write professeurs/{uid} with statut: 'en_attente'
- *   4. Show success toast — AuthProvider takes over and ProtectedRoute redirects
- *      to /prof/en-attente.
+ *   4. Show success toast — AuthProvider takes over and ProtectedRoute
+ *      redirects to /prof/en-attente. Admin approves the account →
+ *      onProfActivated trigger generates the prof's personal code →
+ *      admin communicates it in person → prof uses it on next login.
  */
 
 import { useEffect, useState } from 'react'
@@ -33,6 +42,7 @@ import { ecoleSecuriteDoc, professeurDoc } from '@/lib/firestore-keys'
 import { useAuth } from '@/stores/auth'
 import { useToast } from '@/stores/toast'
 import { translateAuthError } from '@/lib/auth-errors'
+import { verifyPersonalCode, passkeyErrorMessage } from '@/lib/profPasskey'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
@@ -138,23 +148,47 @@ export default function ProfAuth() {
 function ProfLoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
   const [showPwd, setShowPwd] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [codeError, setCodeError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [forgotOpen, setForgotOpen] = useState(false)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setCodeError(null)
 
     const cleanEmail = email.trim().toLowerCase()
+    const cleanCode = code.trim()
     if (!cleanEmail || !password) {
       setError('Veuillez remplir email et mot de passe.')
+      return
+    }
+    if (!cleanCode) {
+      setCodeError('Entrez votre code personnel à 6 chiffres.')
       return
     }
 
     setSubmitting(true)
     try {
+      // Session E6 — personal code check runs BEFORE Firebase Auth.
+      // The server verifies (email, code) against the stored
+      // loginPasskey. On success, we proceed with the standard
+      // Firebase email+password signin. If the code is wrong, we
+      // don't even attempt Firebase signin (saves a round trip and
+      // avoids leaking information about which emails are valid).
+      //
+      // A same-tab bypass skips the server call within 4h of a
+      // prior successful verification — see profPasskey.ts.
+      const verify = await verifyPersonalCode(cleanEmail, cleanCode)
+      if (!verify.ok) {
+        setCodeError(passkeyErrorMessage(verify.reason))
+        setSubmitting(false)
+        return
+      }
+
       await signInWithEmailAndPassword(auth, cleanEmail, password)
       // The parent's useEffect will navigate based on profil.
     } catch (err) {
@@ -202,6 +236,22 @@ function ProfLoginForm() {
           </IconButton>
         }
         error={error ?? undefined}
+      />
+      <Input
+        label="Code d'accès personnel"
+        type="text"
+        placeholder="123456"
+        value={code}
+        onChange={(e) => {
+          setCode(e.target.value)
+          setCodeError(null)
+        }}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        maxLength={12}
+        leading={<KeyRound className="h-4 w-4" />}
+        error={codeError ?? undefined}
+        hint="Code à 6 chiffres communiqué par l'administration."
       />
 
       <Button type="submit" fullWidth size="lg" loading={submitting}>
