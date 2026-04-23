@@ -42,23 +42,6 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/classes/$(classeId)/eleves/$(eleveId)).data.active_parent_session_uid == request.auth.uid;
     }
 
-    // Session 4b — authorization helpers for /notes and /bulletins
-    // writes. These close the hole where any isStaff() could write
-    // notes for any class they don't teach. They're read-only checks
-    // on existing docs so they don't double-charge the quota beyond
-    // what the original rule did.
-    function isProfOfClasse(classeId) {
-      return request.auth != null
-        && get(/databases/$(database)/documents/classes/$(classeId))
-             .data.professeursIds.hasAny([request.auth.uid]);
-    }
-
-    function isProfTeachesMatiere(matiere) {
-      return request.auth != null
-        && get(/databases/$(database)/documents/professeurs/$(request.auth.uid))
-             .data.matieres.hasAny([matiere]);
-    }
-
     // ══════════════════════════════════════════════════════════
     // 🔍 COLLECTION GROUP READS
     // ══════════════════════════════════════════════════════════
@@ -312,34 +295,14 @@ service cloud.firestore {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
-        // Session 4b tightening:
-        //  - Admins keep full override (never gated).
-        //  - Create/update: staff must teach the class AND the matière
-        //    being written. Matière pulled from request.resource (the
-        //    incoming doc).
-        //  - Delete: staff must teach the class; matière pulled from
-        //    resource (the existing doc). Matière is immutable on
-        //    existing notes, so resource.data.matiere is always safe.
-        allow create, update: if isAdmin()
-                              || (isStaff()
-                                  && isProfOfClasse(classeId)
-                                  && isProfTeachesMatiere(request.resource.data.matiere));
-        allow delete: if isAdmin()
-                      || (isStaff()
-                          && isProfOfClasse(classeId)
-                          && isProfTeachesMatiere(resource.data.matiere));
+        allow write: if isStaff();
       }
 
       match /bulletins/{document=**} {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
-        // Session 4b tightening: writes limited to admin (manual
-        // override) or a prof teaching this class. This still lets
-        // the annualClosure bulk-write path run as PP — the PP is
-        // necessarily in classes.professeursIds.
-        allow write: if isAdmin()
-                     || (isStaff() && isProfOfClasse(classeId));
+        allow write: if isStaff();
       }
 
       match /colles/{document=**} {
@@ -387,7 +350,24 @@ service cloud.firestore {
                     && request.auth.uid == userId
                     && request.resource.data.statut == 'en_attente';
 
-      allow update, delete: if isAdmin() || isSaaSMaster();
+      // Admins and the SaaS master can update any field on any prof.
+      allow update: if isAdmin() || isSaaSMaster()
+                       // Session 7.3 — OR the authenticated user is
+                       // writing to their OWN doc AND the only field
+                       // being changed is `signature`. This lets profs
+                       // save their own signature from the "Mon profil"
+                       // tab without opening up the whole doc. Exact
+                       // field-set check via diff().affectedKeys() so
+                       // a malicious prof can't sneak in a role change
+                       // alongside a signature update.
+                    || (
+                      request.auth != null
+                      && request.auth.uid == userId
+                      && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['signature'])
+                    );
+
+      allow delete: if isAdmin() || isSaaSMaster();
       allow read: if request.auth != null;
     }
   }
