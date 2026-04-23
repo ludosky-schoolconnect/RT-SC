@@ -19,6 +19,7 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 import App from './App'
 import { OfflineBanner } from '@/components/app/OfflineBanner'
 import { UpdateReadyToast } from '@/components/app/UpdateReadyToast'
+import { PwaInstallBanner } from '@/components/app/PwaInstallBanner'
 import './styles/tokens.css'
 import './styles/base.css'
 
@@ -169,6 +170,7 @@ createRoot(rootEl).render(
         <OfflineBanner />
         <App />
         <UpdateReadyToast />
+        <PwaInstallBanner />
       </BrowserRouter>
     </PersistQueryClientProvider>
   </StrictMode>
