@@ -12,6 +12,7 @@
  * 3. On CF failure with 'not-found' / 'unavailable' (pre-Blaze):
  *    - Falls back to reading the eleve doc client-side if
  *      devFallbackEnabled !== false in /ecole/securite
+ *      (same field as prof fallback — one vendor toggle controls both)
  *
  * The fallback is weaker (PIN readable from client Firestore query)
  * but keeps the app testable before Blaze is activated. Once functions
@@ -90,9 +91,10 @@ async function verifyWithClientSide(
     const { doc, getDoc } = await import('firebase/firestore')
     const { db } = await import('@/firebase')
 
-    // Check if fallback is explicitly disabled by SaaSMaster
+    // Check if fallback is explicitly disabled — uses the same devFallbackEnabled
+    // field as the prof fallback so the single vendor toggle controls both.
     const securiteSnap = await getDoc(doc(db, 'ecole', 'securite'))
-    if (securiteSnap.exists() && securiteSnap.data().studentFallbackEnabled === false) {
+    if (securiteSnap.exists() && securiteSnap.data().devFallbackEnabled === false) {
       console.info('[studentPasskey] client-side fallback disabled by SaaSMaster')
       return { ok: false, reason: 'network' }
     }
