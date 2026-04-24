@@ -1,27 +1,18 @@
 /**
- * RT-SC · Reclamations hooks (Phase 3).
+ * RT-SC · Reclamations hooks (Phase 3 — soft-deduct model).
  *
  * Manages reward claims at /reclamations. A reclamation is a
  * student's request to redeem civisme points for a catalog reward.
  *
- * Flow:
+ * Flow (updated):
  *   1. Student (or prof/admin on their behalf) creates a Reclamation
- *      with statut='demandee'. Points NOT debited yet.
+ *      via useCreateReclamation. Points are IMMEDIATELY debited
+ *      atomically — soft-deduct at request time.
  *   2. Admin reviews the queue in Civisme > Réclamations sub-section.
  *   3. Admin physically hands over the reward, then taps "Fulfilled".
- *      This runs an atomic transaction:
- *        - Reclamation statut → 'fulfillee'
- *        - Eleve civismePoints decreases by pointsCout (clamped to floor)
- *        - civismeHistory entry appended with soldeApres snapshot
- *   4. Alternative: admin rejects/cancels → statut='annulee', no
- *      point change.
- *
- * Why pull-model (request → admin fulfills) instead of auto-debit?
- *   - Physical stock is offline-managed; the app can't verify an item
- *     was actually handed over.
- *   - Cancellations (student changed their mind, out of stock) need
- *     clean handling without refund logic.
- *   - Admin gets a queue they can batch-process at end of day.
+ *      This updates statut → 'fulfillee' only — no balance change.
+ *   4. Alternative: admin (or student) cancels → statut='annulee'
+ *      and points are REFUNDED atomically.
  *
  * Read patterns:
  *   - useAllReclamations() — admin queue, all statuts
@@ -29,17 +20,16 @@
  *   - useMyReclamations(eleveId) — student sees their own requests
  *
  * Write patterns:
- *   - useCreateReclamation() — request (any of student/prof/admin)
- *   - useFulfillReclamation() — admin only, atomic debit + history
- *   - useCancelReclamation() — admin (or student pre-fulfillment)
+ *   - useCreateReclamation() — request + immediate point debit (TX)
+ *   - useFulfillReclamation() — admin only, status update only (no balance change)
+ *   - useCancelReclamation() — admin or student, refunds points (TX)
  */
 
 import { useEffect } from 'react'
 import {
-  addDoc,
   collection,
   doc,
-  getDoc,
+  increment,
   onSnapshot,
   orderBy,
   query,
@@ -62,6 +52,9 @@ import {
 import { generateTicketCode } from '@/lib/tickets'
 import { CIVISME_FLOOR, CIVISME_CEILING } from '@/hooks/useCivisme'
 import type { Reclamation, ReclamationStatut } from '@/types/models'
+
+// Suppress unused lint warning — increment imported for future use
+void increment
 
 const FIVE_MIN = 5 * 60_000
 
@@ -186,7 +179,7 @@ export function useMyReclamations(eleveId: string | undefined) {
   })
 }
 
-// ─── Write: create reclamation ─────────────────────────────
+// ─── Write: create reclamation (soft-deduct at request time) ─
 
 export interface CreateReclamationInput {
   // Target eleve (denormalized)
@@ -202,8 +195,6 @@ export interface CreateReclamationInput {
   demandeeParType: 'eleve' | 'prof' | 'admin'
   demandeeParUid: string
   demandeeParNom?: string
-  /** Eleve's CURRENT balance — used to validate affordability */
-  currentBalance: number
 }
 
 export function useCreateReclamation() {
@@ -211,42 +202,78 @@ export function useCreateReclamation() {
     mutationFn: async (
       input: CreateReclamationInput
     ): Promise<{ id: string; ticketCode: string }> => {
-      // Affordability guard — the UI should prevent this too, but
-      // defense in depth. Students can't request rewards they can't
-      // pay for.
-      if (input.currentBalance < input.pointsCout) {
-        throw new Error(
-          `Solde insuffisant : ${input.currentBalance} pts disponibles, ${input.pointsCout} requis.`
-        )
-      }
-
       const ticketCode = generateTicketCode('R')
-      const ref = await addDoc(collection(db, reclamationsCol()), {
-        eleveId: input.eleveId,
-        eleveNom: input.eleveNom,
-        classeId: input.classeId,
-        classeNom: input.classeNom,
-        recompenseId: input.recompenseId,
-        recompenseNom: input.recompenseNom,
-        pointsCout: input.pointsCout,
-        demandeeParType: input.demandeeParType,
-        demandeeParUid: input.demandeeParUid,
-        ...(input.demandeeParNom
-          ? { demandeeParNom: input.demandeeParNom }
-          : {}),
-        demandeeLe: serverTimestamp(),
-        statut: 'demandee' as ReclamationStatut,
-        ticketCode,
+
+      // Pre-allocate the ref so we know the ID for the history entry
+      const reclRef = doc(collection(db, reclamationsCol()))
+
+      await runTransaction(db, async (tx) => {
+        // Read eleve balance inside TX — source of truth
+        const eleveRef = doc(db, eleveDoc(input.classeId, input.eleveId))
+        const eleveSnap = await tx.get(eleveRef)
+        if (!eleveSnap.exists()) throw new Error('Élève introuvable.')
+        const eleveData = eleveSnap.data() as { civismePoints?: number }
+        const current = eleveData.civismePoints ?? 0
+
+        // Validate affordability (atomic check inside TX)
+        if (current < input.pointsCout) {
+          throw new Error(
+            `Solde insuffisant : ${current} pts disponibles, ${input.pointsCout} requis.`
+          )
+        }
+
+        const newBalance = Math.max(
+          CIVISME_FLOOR,
+          Math.min(CIVISME_CEILING, current - input.pointsCout)
+        )
+
+        // Create reclamation
+        tx.set(reclRef, {
+          eleveId: input.eleveId,
+          eleveNom: input.eleveNom,
+          classeId: input.classeId,
+          classeNom: input.classeNom,
+          recompenseId: input.recompenseId,
+          recompenseNom: input.recompenseNom,
+          pointsCout: input.pointsCout,
+          demandeeParType: input.demandeeParType,
+          demandeeParUid: input.demandeeParUid,
+          ...(input.demandeeParNom ? { demandeeParNom: input.demandeeParNom } : {}),
+          demandeeLe: serverTimestamp(),
+          statut: 'demandee' as ReclamationStatut,
+          ticketCode,
+        })
+
+        // Debit points immediately
+        tx.update(eleveRef, { civismePoints: newBalance })
+
+        // Write history entry
+        const historyRef = doc(
+          collection(db, civismeHistoryCol(input.classeId, input.eleveId))
+        )
+        tx.set(historyRef, {
+          delta: -input.pointsCout,
+          raison: 'reclamation',
+          reference: {
+            type: 'reclamation',
+            id: reclRef.id,
+            label: input.recompenseNom,
+          },
+          date: serverTimestamp(),
+          parUid: input.demandeeParUid,
+          ...(input.demandeeParNom ? { parNom: input.demandeeParNom } : {}),
+          soldeApres: newBalance,
+        })
       })
-      return { id: ref.id, ticketCode }
+
+      return { id: reclRef.id, ticketCode }
     },
   })
 }
 
 // ─── Write: fulfill (admin hands over the reward) ──────────
 //
-// Atomic transaction: reclamation status + eleve points + history
-// entry all in one batch. If any fail, nothing is written.
+// Points are already debited at request time. This just updates status.
 
 export interface FulfillReclamationInput {
   reclamationId: string
@@ -258,8 +285,7 @@ export function useFulfillReclamation() {
   return useMutation({
     mutationFn: async (
       input: FulfillReclamationInput
-    ): Promise<{ newBalance: number }> => {
-      let newBalance = 0
+    ): Promise<void> => {
       await runTransaction(db, async (tx) => {
         const reclRef = doc(db, reclamationDoc(input.reclamationId))
         const reclSnap = await tx.get(reclRef)
@@ -272,28 +298,7 @@ export function useFulfillReclamation() {
           )
         }
 
-        const eleveRef = doc(db, eleveDoc(recl.classeId, recl.eleveId))
-        const eleveSnap = await tx.get(eleveRef)
-        if (!eleveSnap.exists()) throw new Error('Élève introuvable.')
-        const eleveData = eleveSnap.data() as { civismePoints?: number }
-        const currentPts = eleveData.civismePoints ?? 0
-
-        // Refuse to fulfill if eleve can no longer afford it. This
-        // catches the edge case where points were spent on another
-        // reward between request and fulfillment, or incidents
-        // depleted the balance.
-        if (currentPts < recl.pointsCout) {
-          throw new Error(
-            `Solde insuffisant pour honorer : ${currentPts} pts disponibles, ${recl.pointsCout} requis. Annulez la réclamation.`
-          )
-        }
-
-        newBalance = Math.max(
-          CIVISME_FLOOR,
-          Math.min(CIVISME_CEILING, currentPts - recl.pointsCout)
-        )
-
-        // Update reclamation
+        // Points already debited at request time — just update status
         tx.update(reclRef, {
           statut: 'fulfillee' as ReclamationStatut,
           fulfilleeLe: serverTimestamp(),
@@ -302,34 +307,12 @@ export function useFulfillReclamation() {
             ? { fulfilleeParNom: input.fulfilleeParNom }
             : {}),
         })
-
-        // Debit points on eleve
-        tx.update(eleveRef, { civismePoints: newBalance })
-
-        // Append history entry
-        const historyRef = doc(
-          collection(db, civismeHistoryCol(recl.classeId, recl.eleveId))
-        )
-        tx.set(historyRef, {
-          delta: -recl.pointsCout,
-          raison: 'reclamation',
-          reference: {
-            type: 'reclamation',
-            id: input.reclamationId,
-            label: recl.recompenseNom,
-          },
-          date: serverTimestamp(),
-          parUid: input.fulfilleeParUid,
-          ...(input.fulfilleeParNom ? { parNom: input.fulfilleeParNom } : {}),
-          soldeApres: newBalance,
-        })
       })
-      return { newBalance }
     },
   })
 }
 
-// ─── Write: cancel reclamation (before fulfillment) ────────
+// ─── Write: cancel reclamation — refunds points ────────────
 
 export interface CancelReclamationInput {
   reclamationId: string
@@ -341,17 +324,32 @@ export interface CancelReclamationInput {
 export function useCancelReclamation() {
   return useMutation({
     mutationFn: async (input: CancelReclamationInput): Promise<void> => {
-      const ref = doc(db, reclamationDoc(input.reclamationId))
-      const snap = await getDoc(ref)
-      if (!snap.exists()) throw new Error('Réclamation introuvable.')
-      const recl = snap.data() as Reclamation
-      if (recl.statut !== 'demandee') {
-        throw new Error(
-          `Impossible d'annuler : statut actuel ${recl.statut}.`
-        )
-      }
       await runTransaction(db, async (tx) => {
-        tx.update(ref, {
+        const reclRef = doc(db, reclamationDoc(input.reclamationId))
+        const reclSnap = await tx.get(reclRef)
+        if (!reclSnap.exists()) throw new Error('Réclamation introuvable.')
+        const recl = reclSnap.data() as Reclamation
+
+        if (recl.statut !== 'demandee') {
+          throw new Error(
+            `Impossible d'annuler : statut actuel ${recl.statut}.`
+          )
+        }
+
+        // Read eleve balance for refund
+        const eleveRef = doc(db, eleveDoc(recl.classeId, recl.eleveId))
+        const eleveSnap = await tx.get(eleveRef)
+        if (!eleveSnap.exists()) throw new Error('Élève introuvable.')
+        const eleveData = eleveSnap.data() as { civismePoints?: number }
+        const current = eleveData.civismePoints ?? 0
+
+        const refundedBalance = Math.max(
+          CIVISME_FLOOR,
+          Math.min(CIVISME_CEILING, current + recl.pointsCout)
+        )
+
+        // Update reclamation status
+        tx.update(reclRef, {
           statut: 'annulee' as ReclamationStatut,
           annuleeLe: serverTimestamp(),
           annuleeParUid: input.cancelledByUid,
@@ -361,6 +359,28 @@ export function useCancelReclamation() {
           ...(input.reason?.trim()
             ? { annulationReason: input.reason.trim() }
             : {}),
+        })
+
+        // Refund points
+        tx.update(eleveRef, { civismePoints: refundedBalance })
+
+        // Write refund history entry
+        const historyRef = doc(
+          collection(db, civismeHistoryCol(recl.classeId, recl.eleveId))
+        )
+        tx.set(historyRef, {
+          delta: recl.pointsCout,  // positive — refund
+          raison: 'reclamation',
+          reference: {
+            type: 'reclamation',
+            id: input.reclamationId,
+            label: `${recl.recompenseNom} (remboursé)`,
+          },
+          motif: 'Annulation de la demande',
+          date: serverTimestamp(),
+          parUid: input.cancelledByUid,
+          ...(input.cancelledByNom ? { parNom: input.cancelledByNom } : {}),
+          soldeApres: refundedBalance,
         })
       })
     },
