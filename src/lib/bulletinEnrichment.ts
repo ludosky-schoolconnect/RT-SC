@@ -295,13 +295,21 @@ function computeDisciplineStats(
     if (p.retardsIds.includes(eleveId)) retardsCount += 1
   }
 
-  // Absences count: appel-marked matiere slots PLUS declared days that
-  // weren't also appel-marked. Simple union approximation — slight risk
-  // of under-counting if a declaration covers only part of a day's slots.
-  const declaredDaysNotInAppel = Array.from(declaredAbsenceKeys).filter((dayKey) => {
-    return !Array.from(appelAbsenceKeys).some((k) => k.startsWith(dayKey))
-  })
-  const absencesCount = appelAbsenceKeys.size + declaredDaysNotInAppel.length
+  // Collapse appel marks to day-level: multiple matières absent on the same
+  // day (e.g. absent all day marked in 3 subjects) count as ONE absent day,
+  // not three. This mirrors how declared absences are already counted (one
+  // key per day). Without this, a full-day absence inflated the count by
+  // however many matières the prof marked in appel.
+  const appelAbsenceDays = new Set<string>()
+  for (const key of appelAbsenceKeys) {
+    appelAbsenceDays.add(key.split('__')[0])
+  }
+
+  // Declared days that weren't already captured by any appel mark for that day.
+  const declaredDaysNotInAppel = Array.from(declaredAbsenceKeys).filter(
+    (dayKey) => !appelAbsenceDays.has(dayKey)
+  )
+  const absencesCount = appelAbsenceDays.size + declaredDaysNotInAppel.length
 
   // 3. Colle hours (sum)
   const heuresColle = source.colles.reduce((acc, c) => acc + (c.heures || 0), 0)

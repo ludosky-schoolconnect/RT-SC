@@ -299,20 +299,43 @@ export async function executeFinalArchive({
   }
 
   // 0. Double-rollover guard. If `archive/{annee}` metadata doc already
-  // exists, this année has been archived once before. Running again would
-  // overwrite the archive snapshots with empty data (the live collections
-  // were emptied on the first pass) — silent corruption. Bail loudly.
+  // exists, this année has been archived once before. Two cases:
+  //   a) inProgress: true  → previous run crashed mid-loop. The archive is
+  //      partial and must NOT be re-used or overwritten without first being
+  //      deleted (otherwise counts / élève data will be wrong).
+  //   b) inProgress: false / absent → completed archive. Re-running would
+  //      overwrite the archive snapshots with empty data (live collections
+  //      were already wiped). Bail loudly in both cases.
   try {
     const archiveMetaSnap = await getDoc(docRef(archiveYearDoc(annee)))
     if (archiveMetaSnap.exists()) {
+      if (archiveMetaSnap.data()?.inProgress === true) {
+        throw new Error(
+          `Une archive partielle de ${annee} a été détectée — l'opération précédente a été interrompue en cours de route. Supprimez d'abord l'archive de ${annee} dans la zone "Archives annuelles" pour réessayer depuis le début.`
+        )
+      }
       throw new Error(
         `L'année ${annee} a déjà été archivée. Ré-exécuter écraserait les archives existantes avec des données vides. Pour rejouer l'opération, supprimez d'abord l'archive de ${annee} dans la zone "Archives annuelles".`
       )
     }
   } catch (e) {
-    // Re-throw the user-facing message; only surface unexpected errors as warnings.
-    if (e instanceof Error && e.message.startsWith("L'année")) throw e
+    // Re-throw user-facing messages; surface unexpected errors as warnings.
+    if (e instanceof Error && (e.message.startsWith("L'année") || e.message.startsWith('Une archive'))) throw e
     result.errors.push(`Vérification archive existante: ${(e as Error).message}`)
+  }
+
+  // Write the in-progress sentinel BEFORE touching any class data. If the
+  // operation crashes mid-loop, the next run will detect inProgress: true
+  // and refuse to overwrite the partial archive (rather than silently
+  // re-archiving already-empty collections).
+  try {
+    await setDoc(docRef(archiveYearDoc(annee)), {
+      annee,
+      inProgress: true,
+      startedAt: serverTimestamp(),
+    })
+  } catch (e) {
+    throw new Error(`Impossible d'écrire le marqueur d'archive: ${(e as Error).message}`)
   }
 
   // 1. Read every class
@@ -547,10 +570,10 @@ export async function executeFinalArchive({
   }
   onProgress?.('civisme', 1, 1)
 
-  // 3bis. Write the archive year metadata doc. This is what the browse
-  // UI queries to list archived years — without it, listing requires
-  // `listCollections` which the Firebase JS SDK doesn't expose on the
-  // client. The doc carries denormalized counts for the years-list card.
+  // 3bis. Finalise the archive year metadata doc. The doc was pre-written
+  // with inProgress: true at the start of the operation; we now overwrite
+  // it with the final counts and clear the in-progress flag. The browse UI
+  // queries this doc to list archived years (client SDK has no listCollections).
   try {
     await setDoc(docRef(archiveYearDoc(annee)), {
       annee,
@@ -558,6 +581,7 @@ export async function executeFinalArchive({
       elevesCount: result.elevesArchived,
       errorsCount: result.errors.length,
       archivedAt: serverTimestamp(),
+      inProgress: false,
     })
   } catch (e) {
     result.errors.push(`Archive metadata: ${(e as Error).message}`)

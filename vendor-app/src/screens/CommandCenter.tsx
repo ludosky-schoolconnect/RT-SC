@@ -264,8 +264,8 @@ function CommandCenterInner({
     if (fallbackEnabled === null) return
     const next = !fallbackEnabled
     const msg = next
-      ? 'Réactiver le fallback école (code école accepté si Blaze inactif) ?'
-      : 'Désactiver le fallback ? Le login prof nécessitera Blaze actif.'
+      ? 'Réactiver le fallback pré-Blaze ? (code classe prof + PIN élève acceptés si les Cloud Functions sont inactives)'
+      : 'Désactiver le fallback ? Les logins prof et élève nécessiteront Blaze actif.'
     if (!confirm(msg)) return
     setFallbackPending(true)
     try {
@@ -535,8 +535,8 @@ function CommandCenterInner({
 
       {/* Dev fallback toggle */}
       <SectionCard
-        title="Fallback pré-Blaze"
-        description="Quand actif, le code école sert de secours si les Cloud Functions ne sont pas déployées. Désactivez une fois Blaze en production."
+        title="Fallback pré-Blaze · Prof & Élève"
+        description="Quand actif, le code classe (prof) et le PIN élève servent de secours si les Cloud Functions ne sont pas déployées. Désactivez une fois Blaze en production."
         icon={<FlaskConical />}
         tone={fallbackEnabled === false ? 'default' : 'warning'}
       >

@@ -165,13 +165,42 @@ export function computeAnnualBulletins(
     const perPeriodMoyennes: { periode: string; moyenne: number }[] = []
     for (const periode of expectedPeriodes) {
       const bull = input.bulletinsByEleveByPeriode[eleve.id]?.[periode]
-      // Preflight should have caught missing — but defensive null check
-      if (!bull) continue
+      if (!bull) {
+        // Preflight must have passed before reaching here — a missing bulletin
+        // at this point is a programming error. Log and skip the élève rather
+        // than silently applying the wrong weight to the periods we do have.
+        console.error(
+          `[annualClosure] Missing bulletin for élève ${eleve.id} / période ${periode}. ` +
+          'Run preflight before computeAnnualBulletins.'
+        )
+        continue
+      }
       perPeriodMoyennes.push({
         periode,
         moyenne: bull.moyenneGenerale,
       })
     }
+
+    // Guard: all expected periods must be present for the weighting formula to
+    // be correct (standard Bénin: last period = 2×). If any are missing, the
+    // resulting moyenne would silently use wrong weights — return NaN so the
+    // issue is visible in the UI rather than producing a subtly wrong result.
+    if (perPeriodMoyennes.length !== expectedPeriodes.length) {
+      return {
+        eleveId: eleve.id,
+        genre: eleve.genre,
+        moyenne: NaN,
+        statut: 'Échoué' as const,
+        perPeriodMoyennes,
+      }
+    }
+
+    // Explicit sort by expected period order so the 2× weight always lands on
+    // the correct (last) period — independent of iteration order.
+    perPeriodMoyennes.sort(
+      (a, b) => expectedPeriodes.indexOf(a.periode) - expectedPeriodes.indexOf(b.periode)
+    )
+
     const moyenne = moyenneAnnuelle(
       perPeriodMoyennes.map((p) => p.moyenne),
       formule
