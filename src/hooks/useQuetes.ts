@@ -294,6 +294,51 @@ export function usePendingClaimsCount() {
   })
 }
 
+// ─── Read: all pending claims (flat validation queue) ────────
+//
+// Same collection-group query as usePendingClaimsCount but returns
+// the actual docs. No orderBy to avoid a composite index requirement —
+// sort client-side instead.
+
+export function useAllPendingClaims() {
+  const qc = useQueryClient()
+  const key = ['allPendingClaims']
+  const keyId = keyFor(key)
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(collectionGroup(db, 'claims'), where('statut', '==', 'pending')),
+      (snap) => {
+        const list: QueteClaim[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<QueteClaim, 'id'>),
+        }))
+        qc.setQueryData(key, list)
+        firstSnapshotSeen.add(keyId)
+      },
+      (err) => {
+        console.error('[useAllPendingClaims] snapshot error:', err)
+        firstSnapshotSeen.add(keyId)
+        qc.setQueryData(key, [])
+        qc.invalidateQueries({ queryKey: key })
+      }
+    )
+    return unsub
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return useQuery<QueteClaim[]>({
+    queryKey: key,
+    queryFn: async () => {
+      const cached = qc.getQueryData<QueteClaim[]>(key)
+      if (cached !== undefined) return cached
+      if (firstSnapshotSeen.has(keyId)) return []
+      return new Promise<QueteClaim[]>(() => {})
+    },
+    staleTime: FIVE_MIN,
+  })
+}
+
 // ─── Write: create quete ─────────────────────────────────────
 
 export interface CreateQueteInput {

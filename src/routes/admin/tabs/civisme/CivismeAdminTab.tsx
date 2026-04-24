@@ -12,25 +12,27 @@ import { ElevesSection } from './ElevesSection'
 import { RecompensesSection } from './RecompensesSection'
 import { QuetesAdminSection } from './QuetesAdminSection'
 import { ReclamationsSection } from './ReclamationsSection'
+import { ValidationsQueue } from './ValidationsQueue'
 import { MaintenanceCard } from './MaintenanceCard'
 import { usePendingClaimsCount } from '@/hooks/useQuetes'
 import { usePendingReclamationsCount } from '@/hooks/useReclamations'
 
-type SectionId = 'eleves' | 'quetes' | 'recompenses' | 'reclamations'
+type SectionId = 'validations' | 'eleves' | 'quetes' | 'recompenses' | 'reclamations'
 
 export function CivismeAdminTab() {
-  const [active, setActive] = useState<SectionId>('eleves')
+  const [active, setActive] = useState<SectionId>('validations')
   const { data: pendingClaimsCount = 0 } = usePendingClaimsCount()
   const { data: pendingReclamationsCount = 0 } = usePendingReclamationsCount()
 
   const sections: CivismeSubNavItem<SectionId>[] = [
-    { id: 'eleves', label: 'Élèves' },
     {
-      id: 'quetes',
-      label: 'Quêtes',
+      id: 'validations',
+      label: 'À valider',
       badge: pendingClaimsCount,
       badgeTone: pendingClaimsCount > 0 ? 'attention' : 'neutral',
     },
+    { id: 'eleves', label: 'Élèves' },
+    { id: 'quetes', label: 'Quêtes' },
     { id: 'recompenses', label: 'Récompenses' },
     {
       id: 'reclamations',
@@ -48,6 +50,7 @@ export function CivismeAdminTab() {
         onChange={setActive}
       />
 
+      {active === 'validations' && <ValidationsQueue />}
       {active === 'eleves' && <ElevesSection />}
       {active === 'quetes' && <QuetesAdminSection />}
       {active === 'recompenses' && <RecompensesSection />}
