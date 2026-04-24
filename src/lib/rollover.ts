@@ -300,9 +300,9 @@ export async function executeFinalArchive({
 
   // 0. Double-rollover guard. If `archive/{annee}` metadata doc already
   // exists, this année has been archived once before. Two cases:
-  //   a) inProgress: true  → previous run crashed mid-loop. The archive is
-  //      partial and must NOT be re-used or overwritten without first being
-  //      deleted (otherwise counts / élève data will be wrong).
+  //   a) inProgress: true  → previous run crashed mid-loop. The archive holds
+  //      the ONLY copy of data for already-processed classes (live subcollections
+  //      were deleted during that first pass). Bail — do not overwrite.
   //   b) inProgress: false / absent → completed archive. Re-running would
   //      overwrite the archive snapshots with empty data (live collections
   //      were already wiped). Bail loudly in both cases.
@@ -311,7 +311,9 @@ export async function executeFinalArchive({
     if (archiveMetaSnap.exists()) {
       if (archiveMetaSnap.data()?.inProgress === true) {
         throw new Error(
-          `Une archive partielle de ${annee} a été détectée — l'opération précédente a été interrompue en cours de route. Supprimez d'abord l'archive de ${annee} dans la zone "Archives annuelles" pour réessayer depuis le début.`
+          `Une archive partielle de ${annee} a été détectée — l'opération précédente a été interrompue. ` +
+          `ATTENTION : les classes déjà traitées n'existent plus qu'en archive. ` +
+          `Ne supprimez pas cette archive (perte définitive). Contactez le support pour une reprise manuelle.`
         )
       }
       throw new Error(
