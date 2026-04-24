@@ -26,6 +26,7 @@ import {
   Trash2,
   X,
   Check,
+  CheckCheck,
   ChevronDown,
   AlertCircle,
   Calendar,
@@ -42,6 +43,7 @@ import {
   useDeleteQuete,
   useValidateClaim,
   useRejectClaim,
+  useValidateAllPendingClaims,
   usePendingClaimsCount,
 } from '@/hooks/useQuetes'
 import { Section, SectionHeader } from '@/components/layout/Section'
@@ -289,11 +291,35 @@ function QueteCard({
   onEdit: () => void
 }) {
   const deleteMut = useDeleteQuete()
+  const validateAllMut = useValidateAllPendingClaims()
   const toast = useToast()
   const confirm = useConfirm()
+  const profil = useAuthStore((s) => s.profil)
 
   const slotsRemaining = q.slotsTotal - q.slotsTaken
   const pendingCount = q.slotsTaken - q.slotsValidated
+
+  async function handleValidateAll() {
+    if (!profil) return
+    const ok = await confirm({
+      title: `Valider toutes les participations ?`,
+      message: `${pendingCount} participation${pendingCount > 1 ? 's' : ''} en attente seront validées et les points attribués immédiatement. Cette action est irréversible.`,
+      confirmLabel: `Valider les ${pendingCount}`,
+      variant: 'info',
+    })
+    if (!ok) return
+    try {
+      const result = await validateAllMut.mutateAsync({
+        queteId: q.id,
+        validatedByUid: profil.id,
+        validatedByNom: profil.nom,
+      })
+      toast.success(`${result.count} participation${result.count > 1 ? 's' : ''} validée${result.count > 1 ? 's' : ''} — points attribués.`)
+    } catch (err) {
+      console.error('[QueteCard] validate-all failed:', err)
+      toast.error(err instanceof Error ? err.message : 'Validation impossible.')
+    }
+  }
 
   async function handleDelete() {
     // Build context-aware confirm message based on what's at stake.
@@ -414,7 +440,18 @@ function QueteCard({
 
               {/* Admin actions row */}
               {q.statut !== 'annulee' && (
-                <div className="flex items-center gap-2 pt-2 border-t border-ink-100/60">
+                <div className="flex items-center gap-2 pt-2 border-t border-ink-100/60 flex-wrap">
+                  {pendingCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleValidateAll}
+                      disabled={validateAllMut.isPending}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success-bg px-2.5 py-1.5 text-[0.75rem] font-bold text-success-dark hover:bg-success/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <CheckCheck className="h-3 w-3" aria-hidden />
+                      Valider les {pendingCount}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={onEdit}
@@ -430,7 +467,7 @@ function QueteCard({
                     className="inline-flex items-center gap-1.5 rounded-md border border-danger/30 bg-danger-bg/40 px-2.5 py-1.5 text-[0.75rem] font-bold text-danger hover:bg-danger/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Trash2 className="h-3 w-3" aria-hidden />
-                    Supprimer la quête
+                    Supprimer
                   </button>
                 </div>
               )}
