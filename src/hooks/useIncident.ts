@@ -19,6 +19,11 @@
  * in a rules update shipped alongside this.)
  *
  * Atomic: points decrement + history entry append in one transaction.
+ *
+ * useUndoIncident:
+ *   Admin-only, 24h window. Deletes the incident history entry and
+ *   refunds the points in one transaction. Appends an ajustement_manuel
+ *   entry so the balance trail stays auditable.
  */
 
 import { useMutation } from '@tanstack/react-query'
@@ -27,10 +32,14 @@ import {
   doc,
   runTransaction,
   serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore'
 import { db } from '@/firebase'
-import { eleveDoc, civismeHistoryCol } from '@/lib/firestore-keys'
+import { eleveDoc, civismeHistoryCol, civismeHistoryDoc } from '@/lib/firestore-keys'
 import { CIVISME_FLOOR, CIVISME_CEILING } from '@/hooks/useCivisme'
+import type { CivismeHistoryEntry } from '@/types/models'
+
+const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000
 
 export interface ReportIncidentInput {
   classeId: string
@@ -80,6 +89,76 @@ export function useReportIncident() {
           date: serverTimestamp(),
           parUid: input.parUid,
           parNom: input.parNom,
+          soldeApres: newBalance,
+        })
+      })
+
+      return { newBalance }
+    },
+  })
+}
+
+// ─── Write: undo an incident (admin, 24h window) ────────────
+
+export interface UndoIncidentInput {
+  classeId: string
+  eleveId: string
+  historyEntryId: string
+  undoneByUid: string
+  undoneByNom?: string
+}
+
+export function useUndoIncident() {
+  return useMutation({
+    mutationFn: async (
+      input: UndoIncidentInput
+    ): Promise<{ newBalance: number }> => {
+      let newBalance = 0
+      await runTransaction(db, async (tx) => {
+        const entryRef = doc(
+          db,
+          civismeHistoryDoc(input.classeId, input.eleveId, input.historyEntryId)
+        )
+        const entrySnap = await tx.get(entryRef)
+        if (!entrySnap.exists()) throw new Error('Entrée introuvable.')
+        const entry = entrySnap.data() as CivismeHistoryEntry
+
+        if (entry.raison !== 'incident') {
+          throw new Error('Seuls les incidents peuvent être annulés.')
+        }
+
+        // 24h window check inside TX — uses entry.date (Firestore Timestamp)
+        const entryMs = (entry.date as Timestamp).toMillis()
+        if (Date.now() - entryMs > UNDO_WINDOW_MS) {
+          throw new Error('La fenêtre d\'annulation de 24 h est dépassée.')
+        }
+
+        const eleveRef = doc(db, eleveDoc(input.classeId, input.eleveId))
+        const eleveSnap = await tx.get(eleveRef)
+        if (!eleveSnap.exists()) throw new Error('Élève introuvable.')
+        const current = (eleveSnap.data() as { civismePoints?: number }).civismePoints ?? 0
+
+        // entry.delta is negative for incidents — refund = subtract the delta
+        newBalance = Math.max(
+          CIVISME_FLOOR,
+          Math.min(CIVISME_CEILING, current - entry.delta)
+        )
+
+        // Delete the incident entry
+        tx.delete(entryRef)
+
+        // Refund points
+        tx.update(eleveRef, { civismePoints: newBalance })
+
+        // Audit trail entry
+        const refundRef = doc(collection(db, civismeHistoryCol(input.classeId, input.eleveId)))
+        tx.set(refundRef, {
+          delta: -entry.delta,
+          raison: 'ajustement_manuel',
+          motif: `Annulation incident : ${entry.motif ?? '—'}`,
+          date: serverTimestamp(),
+          parUid: input.undoneByUid,
+          ...(input.undoneByNom ? { parNom: input.undoneByNom } : {}),
           soldeApres: newBalance,
         })
       })
