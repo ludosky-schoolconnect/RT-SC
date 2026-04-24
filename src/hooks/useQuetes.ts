@@ -529,19 +529,23 @@ export interface ClaimQueteInput {
 export function useClaimQuete() {
   return useMutation({
     mutationFn: async (input: ClaimQueteInput): Promise<{ claimId: string; ticketCode: string }> => {
-      const queteRef = doc(db, queteDoc(input.queteId))
-      // Generate ticket code client-side (no collision check — see tickets.ts)
-      const ticketCode = generateTicketCode('T')
+      // Server-side guard: reject if student already has a pending claim on
+      // this quest. Single-field where() — no composite index needed.
+      const existingSnap = await getDocs(
+        query(
+          collection(db, queteClaimsCol(input.queteId)),
+          where('eleveId', '==', input.eleveId)
+        )
+      )
+      const hasPending = existingSnap.docs.some((d) => d.data().statut === 'pending')
+      if (hasPending) {
+        throw new Error('Cet élève a déjà une participation en attente sur cette quête.')
+      }
 
-      // Claims live as a subcollection — addDoc to get auto ID.
-      // We use a batch to also bump slotsTaken atomically and (if last
-      // slot) flip statut to 'complete'.
+      const queteRef = doc(db, queteDoc(input.queteId))
+      const ticketCode = generateTicketCode('T')
       const claimRef = doc(collection(db, queteClaimsCol(input.queteId)))
 
-      // We need to read the current quete to know if THIS claim fills
-      // the last slot. A quick read here is unavoidable: Firestore
-      // batches don't support read-then-write logic without a transaction.
-      // We use a transaction instead of batch for race safety.
       await runTransaction(db, async (tx) => {
           const snap = await tx.get(queteRef)
           if (!snap.exists()) throw new Error('Quête introuvable.')
@@ -599,6 +603,7 @@ export interface ValidateClaimInput {
 }
 
 export function useValidateClaim() {
+  const qc = useQueryClient()
   return useMutation({
     mutationFn: async (input: ValidateClaimInput): Promise<{ newBalance: number }> => {
       // Atomic: read claim + read eleve, write claim status, increment
@@ -662,6 +667,12 @@ export function useValidateClaim() {
         })
       return { newBalance }
     },
+    onSuccess: (_, input) => {
+      // Immediately remove from flat queue — don't wait for snapshot.
+      qc.setQueryData<QueteClaim[]>(['allPendingClaims'], (old) =>
+        old ? old.filter((c) => c.id !== input.claimId) : []
+      )
+    },
   })
 }
 
@@ -673,6 +684,7 @@ export interface RejectClaimInput {
 }
 
 export function useRejectClaim() {
+  const qc = useQueryClient()
   return useMutation({
     mutationFn: async (input: RejectClaimInput): Promise<void> => {
       await runTransaction(db, async (tx) => {
@@ -708,6 +720,12 @@ export function useRejectClaim() {
           tx.update(queteRef, patch)
         }
       })
+    },
+    onSuccess: (_, input) => {
+      // Immediately remove from flat queue — don't wait for snapshot.
+      qc.setQueryData<QueteClaim[]>(['allPendingClaims'], (old) =>
+        old ? old.filter((c) => c.id !== input.claimId) : []
+      )
     },
   })
 }
