@@ -46,7 +46,9 @@ import { useRecompenses } from '@/hooks/useRecompenses'
 import {
   useMyReclamations,
   useCreateReclamation,
+  useCancelReclamation,
 } from '@/hooks/useReclamations'
+import { useConfirm } from '@/stores/confirm'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import {
   TicketCard,
@@ -83,6 +85,8 @@ export function RecompensesEleveSection({
   const [ticketData, setTicketData] = useState<TicketCardData | null>(null)
   const [ticketOpen, setTicketOpen] = useState(false)
   const createMut = useCreateReclamation()
+  const cancelMut = useCancelReclamation()
+  const confirm = useConfirm()
   const toast = useToast()
 
   // Filter out unavailable; sort by affordability (affordable first), then cost asc
@@ -122,7 +126,6 @@ export function RecompensesEleveSection({
         pointsCout: requesting.pointsRequis,
         demandeeParType: 'eleve',
         demandeeParUid: studentUid,
-        currentBalance,
       })
 
       const ticket: TicketCardData = {
@@ -151,6 +154,27 @@ export function RecompensesEleveSection({
           : 'Impossible de faire cette demande.'
       )
       setRequesting(null)
+    }
+  }
+
+  async function handleCancelReclamation(r: Reclamation) {
+    const ok = await confirm({
+      title: 'Annuler cette demande ?',
+      message: `Votre demande pour « ${r.recompenseNom} » sera annulée et ${r.pointsCout} pt${r.pointsCout > 1 ? 's' : ''} vous seront remboursés immédiatement.`,
+      confirmLabel: 'Annuler la demande',
+      variant: 'warning',
+    })
+    if (!ok) return
+    try {
+      await cancelMut.mutateAsync({
+        reclamationId: r.id,
+        cancelledByUid: studentUid,
+      })
+      toast.success(`Demande annulée. ${r.pointsCout} pts remboursés.`)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Impossible d\'annuler cette demande.'
+      )
     }
   }
 
@@ -235,6 +259,8 @@ export function RecompensesEleveSection({
                 key={r.id}
                 reclamation={r}
                 onReopenTicket={() => reopenTicketFor(r)}
+                onCancel={() => handleCancelReclamation(r)}
+                cancelling={cancelMut.isPending}
               />
             ))}
           </div>
@@ -253,8 +279,8 @@ export function RecompensesEleveSection({
               <ModalTitle>Réclamer cette récompense ?</ModalTitle>
               <ModalDescription>
                 Un ticket sera émis. Présentez-le à l'administration pour
-                récupérer votre récompense. Les points seront déduits au
-                moment de la remise.
+                récupérer votre récompense. Les points sont déduits
+                immédiatement — annulez si vous changez d'avis.
               </ModalDescription>
             </ModalHeader>
             <ModalBody>
@@ -457,24 +483,19 @@ function RewardCard({
 function ReclamationRow({
   reclamation: r,
   onReopenTicket,
+  onCancel,
+  cancelling,
 }: {
   reclamation: Reclamation
   onReopenTicket: () => void
+  onCancel: () => void
+  cancelling: boolean
 }) {
   const demandeeLe = (r.demandeeLe as { toDate?: () => Date })?.toDate?.()
   const isPending = r.statut === 'demandee'
 
   return (
-    <button
-      type="button"
-      onClick={isPending ? onReopenTicket : undefined}
-      className={cn(
-        'w-full text-left bg-white rounded-lg border-[1.5px] border-ink-100 px-4 py-3',
-        isPending
-          ? 'hover:border-navy/30 transition-colors'
-          : 'cursor-default'
-      )}
-    >
+    <div className="bg-white rounded-lg border-[1.5px] border-ink-100 px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <p className="font-display text-[0.92rem] font-bold text-navy leading-tight truncate">
@@ -495,7 +516,30 @@ function ReclamationRow({
         </div>
         <StatusPill statut={r.statut} pointsCout={r.pointsCout} />
       </div>
-    </button>
+      {isPending && (
+        <div className="flex gap-2 mt-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onReopenTicket}
+            leadingIcon={<TicketIcon className="h-3.5 w-3.5" aria-hidden />}
+            className="flex-1"
+          >
+            Voir ticket
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+            disabled={cancelling}
+            leadingIcon={<XCircle className="h-3.5 w-3.5" aria-hidden />}
+            className="flex-1 text-danger hover:bg-danger-bg"
+          >
+            Annuler
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 

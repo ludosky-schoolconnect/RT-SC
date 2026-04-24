@@ -198,12 +198,12 @@ function ReclamationRow({ reclamation: r }: { reclamation: Reclamation }) {
     if (!ok) return
 
     try {
-      const res = await fulfillMut.mutateAsync({
+      await fulfillMut.mutateAsync({
         reclamationId: r.id,
         fulfilleeParUid: profil.id,
         fulfilleeParNom: profil.nom,
       })
-      toast.success(`Récompense remise. Nouveau solde : ${res.newBalance} pts.`)
+      toast.success('Récompense remise. Réclamation honorée.')
     } catch (err) {
       console.error('[ReclamationRow] fulfill failed:', err)
       toast.error(
@@ -216,7 +216,7 @@ function ReclamationRow({ reclamation: r }: { reclamation: Reclamation }) {
     if (!profil) return
     const ok = await confirm({
       title: `Annuler la réclamation ?`,
-      message: `${r.eleveNom} ne recevra pas "${r.recompenseNom}". Ses points ne seront pas touchés.`,
+      message: `${r.eleveNom} ne recevra pas « ${r.recompenseNom} ». Ses ${r.pointsCout} pts seront remboursés immédiatement.`,
       confirmLabel: 'Annuler',
       variant: 'danger',
     })

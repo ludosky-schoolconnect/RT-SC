@@ -152,7 +152,6 @@ export function NouvelleReclamationModal({
         demandeeParType: 'admin',
         demandeeParUid: adminUid,
         demandeeParNom: adminNom,
-        currentBalance: studentBalance,
       })
       toast.success(
         `Réclamation créée pour ${selectedEleve.nom}. Utilisez « Honorer » dans la liste pour finaliser.`
