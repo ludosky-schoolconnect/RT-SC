@@ -127,8 +127,9 @@ export function QuetesAdminSection() {
         }
       />
 
-      {/* Pending callout */}
-      {pendingCount > 0 && (
+      {/* Pending callout — only when quêtes exist; orphaned claims from
+          deleted quêtes are handled by the À valider tab instead */}
+      {pendingCount > 0 && quetes.length > 0 && (
         <div className="mb-4 rounded-lg bg-warning-bg/70 border-[1.5px] border-warning/30 px-3.5 py-3 flex items-start gap-2.5">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-warning/20">
             <Clock className="h-4 w-4 text-warning-dark" aria-hidden />

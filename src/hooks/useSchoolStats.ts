@@ -23,13 +23,10 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   collection,
-  collectionGroup,
   doc,
   getCountFromServer,
   getDoc,
   getDocs,
-  query,
-  where,
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 
@@ -51,48 +48,34 @@ async function safeCount(
 }
 
 async function fetchSchoolStats(): Promise<SchoolStats> {
-  // Read the current school year from /ecole/config
-  let anneeActive: string | null = null
+  // Always enumerate /classes directly — collectionGroup('eleves') would
+  // also count students in /archive/.../eleves, inflating the total.
+  const classSnap = await getDocs(collection(db, 'classes'))
+
+  // If anneeActive is configured, filter to the current year only.
+  let filteredDocs = classSnap.docs
   try {
     const configSnap = await getDoc(doc(db, 'ecole', 'config'))
     if (configSnap.exists()) {
-      anneeActive = (configSnap.data() as { anneeActive?: string }).anneeActive ?? null
+      const anneeActive = (configSnap.data() as { anneeActive?: string }).anneeActive
+      if (anneeActive) {
+        filteredDocs = classSnap.docs.filter(
+          (d) => (d.data() as { annee?: string }).annee === anneeActive
+        )
+      }
     }
   } catch {
-    // /ecole/config unreadable — fall back to unfiltered counts below
+    // Config unreadable — use all classes as-is
   }
 
-  if (!anneeActive) {
-    // Fallback: no year info, count everything (legacy behaviour)
-    const [classes, eleves] = await Promise.all([
-      safeCount(collection(db, 'classes')),
-      safeCount(collectionGroup(db, 'eleves')),
-    ])
-    return { classes, eleves }
-  }
-
-  // Count classes for the active year
-  const classesQuery = query(
-    collection(db, 'classes'),
-    where('annee', '==', anneeActive)
+  const counts = await Promise.all(
+    filteredDocs.map((d) => safeCount(collection(db, 'classes', d.id, 'eleves')))
   )
-  const classesCount = await safeCount(classesQuery)
 
-  // Count eleves only from active-year classes (avoids archived students)
-  let elevesCount = 0
-  try {
-    const classSnap = await getDocs(classesQuery)
-    const counts = await Promise.all(
-      classSnap.docs.map((d) =>
-        safeCount(collection(db, 'classes', d.id, 'eleves'))
-      )
-    )
-    elevesCount = counts.reduce((sum, n) => sum + n, 0)
-  } catch (err) {
-    console.warn('[useSchoolStats] eleves count failed:', err)
+  return {
+    classes: filteredDocs.length,
+    eleves: counts.reduce((sum, n) => sum + n, 0),
   }
-
-  return { classes: classesCount, eleves: elevesCount }
 }
 
 export function useSchoolStats() {
