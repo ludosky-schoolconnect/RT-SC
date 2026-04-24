@@ -142,23 +142,26 @@ export function useMyReclamations(eleveId: string | undefined) {
   useEffect(() => {
     if (!eleveId) return
     const unsub = onSnapshot(
-      query(
-        collection(db, reclamationsCol()),
-        where('eleveId', '==', eleveId),
-        orderBy('demandeeLe', 'desc')
-      ),
+      // No orderBy — where(eleveId) + orderBy(demandeeLe) requires a
+      // composite index. Sort client-side instead.
+      query(collection(db, reclamationsCol()), where('eleveId', '==', eleveId)),
       (snap) => {
         const list: Reclamation[] = snap.docs.map((d) => ({
           id: d.id,
           ...(d.data() as Omit<Reclamation, 'id'>),
         }))
+        list.sort((a, b) => {
+          const aMs = (a.demandeeLe as { toMillis?: () => number })?.toMillis?.() ?? 0
+          const bMs = (b.demandeeLe as { toMillis?: () => number })?.toMillis?.() ?? 0
+          return bMs - aMs
+        })
         qc.setQueryData(key, list)
         firstSnapshotSeen.add(keyId)
       },
       (err) => {
         console.error('[useMyReclamations] snapshot error:', err)
         firstSnapshotSeen.add(keyId)
-        qc.setQueryData(key, [])
+        if (qc.getQueryData(key) === undefined) qc.setQueryData(key, [])
         qc.invalidateQueries({ queryKey: key })
       }
     )

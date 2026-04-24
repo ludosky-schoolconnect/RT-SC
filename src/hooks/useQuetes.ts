@@ -141,11 +141,9 @@ export function useOpenQuetesForEleve(classeId: string | undefined) {
   useEffect(() => {
     if (!classeId) return
     const unsub = onSnapshot(
-      query(
-        collection(db, quetesCol()),
-        where('statut', '==', 'ouverte'),
-        orderBy('createdAt', 'desc')
-      ),
+      // No orderBy — combining where(statut) + orderBy(createdAt) requires
+      // a composite index that may not exist. Sort client-side instead.
+      query(collection(db, quetesCol()), where('statut', '==', 'ouverte')),
       (snap) => {
         const list: Quete[] = []
         for (const d of snap.docs) {
@@ -154,13 +152,18 @@ export function useOpenQuetesForEleve(classeId: string | undefined) {
           if (data.slotsTaken >= data.slotsTotal) continue
           list.push({ id: d.id, ...data })
         }
+        list.sort((a, b) => {
+          const aMs = (a.createdAt as { toMillis?: () => number })?.toMillis?.() ?? 0
+          const bMs = (b.createdAt as { toMillis?: () => number })?.toMillis?.() ?? 0
+          return bMs - aMs
+        })
         qc.setQueryData(key, list)
         firstSnapshotSeen.add(keyId)
       },
       (err) => {
         console.error('[useOpenQuetesForEleve] snapshot error:', err)
         firstSnapshotSeen.add(keyId)
-        qc.setQueryData(key, [])
+        if (qc.getQueryData(key) === undefined) qc.setQueryData(key, [])
         qc.invalidateQueries({ queryKey: key })
       }
     )
@@ -222,23 +225,26 @@ export function useMyClaims(eleveId: string | undefined) {
   useEffect(() => {
     if (!eleveId) return
     const unsub = onSnapshot(
-      query(
-        collectionGroup(db, 'claims'),
-        where('eleveId', '==', eleveId),
-        orderBy('claimedAt', 'desc')
-      ),
+      // No orderBy — collection-group where(eleveId) + orderBy(claimedAt)
+      // requires a composite index. Sort client-side instead.
+      query(collectionGroup(db, 'claims'), where('eleveId', '==', eleveId)),
       (snap) => {
         const list: QueteClaim[] = snap.docs.map((d) => ({
           id: d.id,
           ...(d.data() as Omit<QueteClaim, 'id'>),
         }))
+        list.sort((a, b) => {
+          const aMs = (a.claimedAt as { toMillis?: () => number })?.toMillis?.() ?? 0
+          const bMs = (b.claimedAt as { toMillis?: () => number })?.toMillis?.() ?? 0
+          return bMs - aMs
+        })
         qc.setQueryData(key, list)
         firstSnapshotSeen.add(keyId)
       },
       (err) => {
         console.error('[useMyClaims] snapshot error:', err)
         firstSnapshotSeen.add(keyId)
-        qc.setQueryData(key, [])
+        if (qc.getQueryData(key) === undefined) qc.setQueryData(key, [])
         qc.invalidateQueries({ queryKey: key })
       }
     )
