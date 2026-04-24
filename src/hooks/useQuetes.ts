@@ -82,6 +82,32 @@ function keyFor(parts: unknown[]): string {
   return JSON.stringify(parts)
 }
 
+const CLAIM_HISTORY_LIMIT = 5
+
+/**
+ * Delete completed (non-pending) claims for a student beyond
+ * CLAIM_HISTORY_LIMIT, keeping the most recent ones.
+ * Best-effort — called fire-and-forget after new claim creation.
+ */
+async function trimClaimHistory(eleveId: string): Promise<void> {
+  try {
+    const snap = await getDocs(
+      query(collectionGroup(db, 'claims'), where('eleveId', '==', eleveId))
+    )
+    const completed = snap.docs
+      .filter((d) => d.data().statut !== 'pending')
+      .sort((a, b) => {
+        const aMs = (a.data().claimedAt as { toMillis?: () => number })?.toMillis?.() ?? 0
+        const bMs = (b.data().claimedAt as { toMillis?: () => number })?.toMillis?.() ?? 0
+        return bMs - aMs // newest first
+      })
+    const toDelete = completed.slice(CLAIM_HISTORY_LIMIT)
+    await Promise.all(toDelete.map((d) => deleteDoc(d.ref).catch(() => {})))
+  } catch {
+    // Non-critical
+  }
+}
+
 // ─── Read: admin all quetes ──────────────────────────────────
 
 export function useAllQuetes() {
@@ -589,6 +615,9 @@ export function useClaimQuete() {
 
       return { claimId: claimRef.id, ticketCode }
     },
+    onSuccess: (_, input) => {
+      void trimClaimHistory(input.eleveId)
+    },
   })
 }
 
@@ -668,10 +697,10 @@ export function useValidateClaim() {
       return { newBalance }
     },
     onSuccess: (_, input) => {
-      // Immediately remove from flat queue — don't wait for snapshot.
       qc.setQueryData<QueteClaim[]>(['allPendingClaims'], (old) =>
         old ? old.filter((c) => c.id !== input.claimId) : []
       )
+      qc.setQueryData<number>(['pendingClaimsCount'], (n) => Math.max(0, (n ?? 1) - 1))
     },
   })
 }
@@ -722,10 +751,10 @@ export function useRejectClaim() {
       })
     },
     onSuccess: (_, input) => {
-      // Immediately remove from flat queue — don't wait for snapshot.
       qc.setQueryData<QueteClaim[]>(['allPendingClaims'], (old) =>
         old ? old.filter((c) => c.id !== input.claimId) : []
       )
+      qc.setQueryData<number>(['pendingClaimsCount'], (n) => Math.max(0, (n ?? 1) - 1))
     },
   })
 }

@@ -52,6 +52,7 @@ export { yearlySnapshotFallback } from './scheduled/yearlySnapshotFallback.js'
 
 // ── Session E1a
 export { verifyProfLogin } from './http/verifyProfLogin.js'
+export { verifyStudentLogin } from './http/verifyStudentLogin.js'
 export { onProfActivated } from './triggers/onProfActivated.js'
 export { onProfDeleteCascade } from './triggers/onProfDeleteCascade.js'
 export { onClasseDelete } from './triggers/onClasseDelete.js'

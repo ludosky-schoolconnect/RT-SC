@@ -28,7 +28,9 @@
 import { useEffect } from 'react'
 import {
   collection,
+  deleteDoc,
   doc,
+  getDocs,
   increment,
   onSnapshot,
   orderBy,
@@ -57,6 +59,31 @@ import type { Reclamation, ReclamationStatut } from '@/types/models'
 void increment
 
 const FIVE_MIN = 5 * 60_000
+const RECLAMATION_HISTORY_LIMIT = 5
+
+/**
+ * Delete completed (non-pending) reclamations for a student beyond
+ * RECLAMATION_HISTORY_LIMIT, keeping the most recent ones.
+ * Best-effort — failures are silently swallowed.
+ */
+async function trimReclamationHistory(eleveId: string): Promise<void> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, reclamationsCol()), where('eleveId', '==', eleveId))
+    )
+    const completed = snap.docs
+      .filter((d) => d.data().statut !== 'demandee')
+      .sort((a, b) => {
+        const aMs = (a.data().demandeeLe as { toMillis?: () => number })?.toMillis?.() ?? 0
+        const bMs = (b.data().demandeeLe as { toMillis?: () => number })?.toMillis?.() ?? 0
+        return bMs - aMs // newest first
+      })
+    const toDelete = completed.slice(RECLAMATION_HISTORY_LIMIT)
+    await Promise.all(toDelete.map((d) => deleteDoc(d.ref).catch(() => {})))
+  } catch {
+    // Non-critical — UI slice is the primary guard
+  }
+}
 
 // Shared loading-state tracker — same pattern as useQuetes.
 const firstSnapshotSeen = new Set<string>()
@@ -271,6 +298,10 @@ export function useCreateReclamation() {
 
       return { id: reclRef.id, ticketCode }
     },
+    onSuccess: (_, input) => {
+      // Fire-and-forget: trim old completed reclamations beyond the limit.
+      void trimReclamationHistory(input.eleveId)
+    },
   })
 }
 
@@ -285,6 +316,7 @@ export interface FulfillReclamationInput {
 }
 
 export function useFulfillReclamation() {
+  const qc = useQueryClient()
   return useMutation({
     mutationFn: async (
       input: FulfillReclamationInput
@@ -311,6 +343,13 @@ export function useFulfillReclamation() {
             : {}),
         })
       })
+    },
+    onSuccess: (_, input) => {
+      // Trim old completed reclamations for this student. Look up eleveId
+      // from the cached allReclamations list to avoid an extra Firestore read.
+      const all = qc.getQueryData<Reclamation[]>(['reclamations', 'all'])
+      const eleveId = all?.find((r) => r.id === input.reclamationId)?.eleveId
+      if (eleveId) void trimReclamationHistory(eleveId)
     },
   })
 }

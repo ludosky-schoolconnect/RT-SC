@@ -34,7 +34,7 @@ const firstSnapshotSeen = new Set<string>()
 export function useCivismeHistory(
   classeId: string | undefined,
   eleveId: string | undefined,
-  maxEntries = 20
+  maxEntries = 10
 ) {
   const qc = useQueryClient()
   const key = ['civismeHistory', classeId ?? '(none)', eleveId ?? '(none)', maxEntries]

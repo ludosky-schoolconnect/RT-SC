@@ -31,7 +31,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { logger } from 'firebase-functions/v2'
 import { db } from '../lib/firebase.js'
 
-const RETENTION_DAYS = 180
+const RETENTION_DAYS = 30
 
 interface Reclamation {
   statut?: string

@@ -30,6 +30,7 @@ import {
 
 import { auth, db } from '@/firebase'
 import { nomClasse } from '@/lib/benin'
+import { verifyStudentPin, studentPinErrorMessage } from '@/lib/studentPasskey'
 import type { Classe, Eleve } from '@/types/models'
 import type { EleveSession } from '@/types/roles'
 import { useAuthStore } from '@/stores/auth'
@@ -136,7 +137,7 @@ export default function EleveLogin() {
     setPinModalOpen(true)
   }
 
-  // Step 3 — Validate PIN, do anonymous sign-in, save session, navigate
+  // Step 3 — Validate PIN (server-first, client fallback), sign in, navigate
   async function submitPin(e?: React.FormEvent) {
     e?.preventDefault()
     setPinError(null)
@@ -150,33 +151,25 @@ export default function EleveLogin() {
 
     setSubmittingPin(true)
     try {
-      // Read élève doc to validate the PIN
+      // Server-side PIN check (pre-Blaze falls back to client-side read)
+      const result = await verifyStudentPin(classe.id, selectedId, cleanPin)
+      if (!result.ok) {
+        setPinError(studentPinErrorMessage(result.reason))
+        return
+      }
+
+      // Read élève name for the session (we still need a lightweight doc read)
       const eleveSnap = await getDoc(fsDoc(db, 'classes', classe.id, 'eleves', selectedId))
       if (!eleveSnap.exists()) {
         setPinError("Profil introuvable. Contactez votre professeur.")
         return
       }
       const eleveData = eleveSnap.data() as Eleve
-      const realPin = (eleveData.codePin ?? '').toUpperCase()
 
-      if (!realPin) {
-        // Legacy app sometimes lets students through without a PIN if none was set.
-        // RT-SC enforces PIN — admin must generate one in the vault.
-        setPinError("Aucun PIN n'a encore été généré pour ce profil. Contactez l'administration.")
-        return
-      }
-
-      if (cleanPin !== realPin) {
-        setPinError("Code PIN incorrect.")
-        return
-      }
-
-      // Anonymous Firebase sign-in (Firestore rules expect an authenticated user
-      // for some writes the élève performs)
+      // Anonymous Firebase sign-in
       const cred = await signInAnonymously(auth)
 
-      // Best-effort write: stamp the active session UID on the élève doc.
-      // Firestore rules may forbid this — that's fine, we proceed regardless.
+      // Best-effort: stamp active session UID
       try {
         await updateDoc(fsDoc(db, 'classes', classe.id, 'eleves', selectedId), {
           active_session_uid: cred.user.uid,
@@ -196,7 +189,6 @@ export default function EleveLogin() {
       setEleveSession(session)
       setStep('done')
 
-      // Brief celebration delay then navigate
       setTimeout(() => {
         toast.success(`Bienvenue, ${eleveData.nom.split(' ')[0]} !`)
         navigate('/eleve', { replace: true })

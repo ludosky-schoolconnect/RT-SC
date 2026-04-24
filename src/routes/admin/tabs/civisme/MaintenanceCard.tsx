@@ -48,7 +48,7 @@ export function MaintenanceCard() {
       <div className="px-4 py-3 space-y-3">
         <p className="text-[0.78rem] text-ink-600 leading-snug">
           Les quêtes clôturées ou annulées et les réclamations honorées
-          ou annulées de plus de 6 mois sont automatiquement supprimées
+          ou annulées de plus de 1 mois sont automatiquement supprimées
           chaque mois pour libérer de l'espace de stockage. L'historique
           des points de chaque élève est préservé.
         </p>

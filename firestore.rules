@@ -309,10 +309,12 @@ service cloud.firestore {
 
       match /claims/{claimId} {
         allow read: if request.auth != null;
-        // Anyone authenticated can claim (students claim their own);
-        // must be unlocked.
         allow create: if request.auth != null && isUnlocked();
         allow update, delete: if canWriteSchoolData() && (isActiveAdmin() || isSaaSMaster());
+        // Student can delete their own completed (non-pending) claims for history trim
+        allow delete: if request.auth != null && isUnlocked() &&
+          resource.data.claimedByUid == request.auth.uid &&
+          resource.data.statut != 'pending';
       }
     }
 
@@ -320,6 +322,16 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null && isUnlocked();
       allow update, delete: if canWriteSchoolData() && (isActiveAdmin() || isSaaSMaster());
+      // Student can cancel their own pending reclamation
+      allow update: if request.auth != null && isUnlocked() &&
+        resource.data.demandeeParUid == request.auth.uid &&
+        resource.data.statut == 'demandee' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['statut', 'annuleeLe', 'annuleeParUid', 'annulationReason']);
+      // Student can delete their own completed reclamations for history trim
+      allow delete: if request.auth != null && isUnlocked() &&
+        resource.data.demandeeParUid == request.auth.uid &&
+        resource.data.statut != 'demandee';
     }
 
     match /annuaire_parents/{docId} {
@@ -363,6 +375,11 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['englishStreak', 'lastEnglishQuiz'])
         ) || (
           isActiveStaff()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['civismePoints'])
+        ) || (
+          // Student can update own civismePoints — used by reclamation
+          // create (debit) and cancel (refund) transactions.
+          isStudentOf(classeId, eleveId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['civismePoints'])
         )
       );
@@ -419,7 +436,11 @@ service cloud.firestore {
         allow read: if isStudentOf(classeId, eleveId)
                     || isParentOf(classeId, eleveId)
                     || isStaff();
-        allow create, update, delete: if canWriteSchoolData();
+        // canWriteSchoolData covers admins; student create allows the
+        // reclamation-create / reclamation-cancel transactions to write
+        // audit history entries atomically.
+        allow create: if canWriteSchoolData() || isStudentOf(classeId, eleveId);
+        allow update, delete: if canWriteSchoolData();
       }
     }
 
