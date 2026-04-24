@@ -552,8 +552,6 @@ function ClaimRow({
       await rejectMut.mutateAsync({
         queteId,
         claimId: claim.id,
-        rejectedByUid: profil.id,
-        rejectedByNom: profil.nom,
       })
       toast.success('Participation rejetée.')
     } catch (err) {

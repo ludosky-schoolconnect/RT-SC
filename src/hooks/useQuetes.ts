@@ -16,10 +16,11 @@
  * Write patterns:
  *   - useCreateQuete()
  *   - useUpdateQuete()    (limited fields once claims exist)
- *   - useCancelQuete()    (admin marks annulee, open claims rejected)
- *   - useClaimQuete()     (atomic: creates claim + bumps slotsTaken)
- *   - useValidateClaim()  (atomic: claim + quest counter + eleve points)
- *   - useRejectClaim()    (atomic: claim + free up the slot)
+ *   - useCancelQuete()              (admin marks annulee, pending claims deleted)
+ *   - useClaimQuete()               (atomic: creates claim + bumps slotsTaken)
+ *   - useValidateClaim()            (atomic: claim + quest counter + eleve points)
+ *   - useRejectClaim()              (atomic: delete claim + free up slot)
+ *   - useValidateAllPendingClaims() (bulk validate, sequential TXs)
  *
  * Atomicity uses Firestore writeBatch — required because partial
  * failures would corrupt the slot accounting.
@@ -33,10 +34,12 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   increment,
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   Timestamp,
   updateDoc,
@@ -408,16 +411,13 @@ export function useCancelQuete() {
         updatedAt: serverTimestamp(),
       })
 
-      // Reject all currently-pending claims so students stop expecting points.
-      // We do NOT touch validated claims (those students already got points).
-      const claimsSnap = await import('firebase/firestore').then(({ getDocs, query: q, where: w, collection: c }) =>
-        getDocs(q(c(db, queteClaimsCol(queteId)), w('statut', '==', 'pending')))
+      // Delete all pending claims — the quest is gone, no reason to keep them.
+      // Validated claims are untouched (those students already got their points).
+      const claimsSnap = await getDocs(
+        query(collection(db, queteClaimsCol(queteId)), where('statut', '==', 'pending'))
       )
       for (const cd of claimsSnap.docs) {
-        batch.update(cd.ref, {
-          statut: 'rejected',
-          rejectionReason: 'Quête annulée par l\'administration.',
-        })
+        batch.delete(cd.ref)
       }
 
       await batch.commit()
@@ -491,8 +491,7 @@ export function useClaimQuete() {
       // the last slot. A quick read here is unavoidable: Firestore
       // batches don't support read-then-write logic without a transaction.
       // We use a transaction instead of batch for race safety.
-      await import('firebase/firestore').then(async ({ runTransaction }) =>
-        runTransaction(db, async (tx) => {
+      await runTransaction(db, async (tx) => {
           const snap = await tx.get(queteRef)
           if (!snap.exists()) throw new Error('Quête introuvable.')
           const q = snap.data() as Quete
@@ -532,7 +531,6 @@ export function useClaimQuete() {
             updatedAt: serverTimestamp(),
           })
         })
-      )
 
       return { claimId: claimRef.id, ticketCode }
     },
@@ -555,8 +553,7 @@ export function useValidateClaim() {
       // Atomic: read claim + read eleve, write claim status, increment
       // eleve points, bump slotsValidated on quete.
       let newBalance = 0
-      await import('firebase/firestore').then(async ({ runTransaction }) =>
-        runTransaction(db, async (tx) => {
+      await runTransaction(db, async (tx) => {
           const claimRef = doc(db, queteClaimDoc(input.queteId, input.claimId))
           const queteRef = doc(db, queteDoc(input.queteId))
 
@@ -612,67 +609,136 @@ export function useValidateClaim() {
             soldeApres: newBalance,
           })
         })
-      )
       return { newBalance }
     },
   })
 }
 
-// ─── Write: reject a claim (free up the slot) ──────────────
+// ─── Write: reject a claim (delete doc + free up the slot) ──
 
 export interface RejectClaimInput {
   queteId: string
   claimId: string
-  reason?: string
-  rejectedByUid: string
-  rejectedByNom?: string
 }
 
 export function useRejectClaim() {
   return useMutation({
     mutationFn: async (input: RejectClaimInput): Promise<void> => {
-      await import('firebase/firestore').then(async ({ runTransaction }) =>
-        runTransaction(db, async (tx) => {
-          const claimRef = doc(db, queteClaimDoc(input.queteId, input.claimId))
+      await runTransaction(db, async (tx) => {
+        const claimRef = doc(db, queteClaimDoc(input.queteId, input.claimId))
+        const queteRef = doc(db, queteDoc(input.queteId))
+
+        const claimSnap = await tx.get(claimRef)
+        if (!claimSnap.exists()) throw new Error('Réclamation introuvable.')
+        const claim = claimSnap.data() as QueteClaim
+
+        if (claim.statut !== 'pending') {
+          throw new Error(`Cette réclamation n'est plus en attente.`)
+        }
+
+        // Delete the claim — no point keeping a rejected doc around.
+        tx.delete(claimRef)
+
+        // Free the slot; reopen quest if it was 'complete' and now has room.
+        const queteSnap = await tx.get(queteRef)
+        if (queteSnap.exists()) {
+          const q = queteSnap.data() as Quete
+          const newSlotsTaken = Math.max(0, q.slotsTaken - 1)
+          const patch: Record<string, unknown> = {
+            slotsTaken: newSlotsTaken,
+            updatedAt: serverTimestamp(),
+          }
+          if (q.statut === 'complete' && newSlotsTaken < q.slotsTotal) {
+            patch.statut = 'ouverte' as QueteStatut
+          }
+          tx.update(queteRef, patch)
+        }
+      })
+    },
+  })
+}
+
+// ─── Write: validate all pending claims for a quest ─────────
+
+export interface ValidateAllPendingClaimsInput {
+  queteId: string
+  validatedByUid: string
+  validatedByNom?: string
+}
+
+export function useValidateAllPendingClaims() {
+  return useMutation({
+    mutationFn: async (
+      input: ValidateAllPendingClaimsInput
+    ): Promise<{ count: number }> => {
+      const snap = await getDocs(
+        query(
+          collection(db, queteClaimsCol(input.queteId)),
+          where('statut', '==', 'pending')
+        )
+      )
+      const claims = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<QueteClaim, 'id'>),
+      }))
+
+      // Validate sequentially — each TX re-reads current eleve balance so
+      // sequential point credits are correct even if same student appears twice.
+      let count = 0
+      for (const claim of claims) {
+        await runTransaction(db, async (tx) => {
+          const claimRef = doc(db, queteClaimDoc(input.queteId, claim.id))
           const queteRef = doc(db, queteDoc(input.queteId))
 
           const claimSnap = await tx.get(claimRef)
-          if (!claimSnap.exists()) throw new Error('Réclamation introuvable.')
-          const claim = claimSnap.data() as QueteClaim
+          // Skip if already handled by a concurrent action
+          if (!claimSnap.exists()) return
+          if ((claimSnap.data() as QueteClaim).statut !== 'pending') return
 
-          if (claim.statut !== 'pending') {
-            throw new Error(`Cette réclamation n'est plus en attente.`)
-          }
+          const eleveRef = doc(db, eleveDoc(claim.classeId, claim.eleveId))
+          const eleveSnap = await tx.get(eleveRef)
+          if (!eleveSnap.exists()) return
+          const eleveData = eleveSnap.data() as { civismePoints?: number }
+          const current = eleveData.civismePoints ?? 0
+          const newBalance = Math.max(
+            CIVISME_FLOOR,
+            Math.min(CIVISME_CEILING, current + claim.pointsRecompense)
+          )
 
           tx.update(claimRef, {
-            statut: 'rejected',
-            ...(input.reason?.trim()
-              ? { rejectionReason: input.reason.trim() }
-              : {}),
+            statut: 'validated',
             validatedAt: serverTimestamp(),
-            validatedByUid: input.rejectedByUid,
-            ...(input.rejectedByNom ? { validatedByNom: input.rejectedByNom } : {}),
+            validatedByUid: input.validatedByUid,
+            ...(input.validatedByNom ? { validatedByNom: input.validatedByNom } : {}),
+          })
+          tx.update(eleveRef, { civismePoints: newBalance })
+          tx.update(queteRef, {
+            slotsValidated: increment(1),
+            updatedAt: serverTimestamp(),
           })
 
-          // Free the slot back up — only if the parent was 'complete'
-          // and now should reopen. Ouverte → ouverte is fine too.
-          const queteSnap = await tx.get(queteRef)
-          if (queteSnap.exists()) {
-            const q = queteSnap.data() as Quete
-            const newSlotsTaken = Math.max(0, q.slotsTaken - 1)
-            const patch: Record<string, unknown> = {
-              slotsTaken: newSlotsTaken,
-              updatedAt: serverTimestamp(),
-            }
-            // If we were 'complete' but freeing up a slot, reopen it
-            // (unless admin had explicitly cancelled or closed)
-            if (q.statut === 'complete' && newSlotsTaken < q.slotsTotal) {
-              patch.statut = 'ouverte' as QueteStatut
-            }
-            tx.update(queteRef, patch)
-          }
+          const historyRef = doc(
+            collection(db, civismeHistoryCol(claim.classeId, claim.eleveId))
+          )
+          tx.set(historyRef, {
+            delta: claim.pointsRecompense,
+            raison: 'quete',
+            reference: {
+              type: 'quete',
+              id: input.queteId,
+              label: claim.queteTitre,
+            },
+            date: serverTimestamp(),
+            parUid: input.validatedByUid,
+            ...(input.validatedByNom ? { parNom: input.validatedByNom } : {}),
+            soldeApres: newBalance,
+          })
+
+          count++
         })
-      )
+      }
+
+      return { count }
     },
   })
 }
