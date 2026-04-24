@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   XCircle,
   Ticket as TicketIcon,
+  Target,
 } from 'lucide-react'
 import {
   Modal,
@@ -89,17 +90,16 @@ export function RecompensesEleveSection({
   const confirm = useConfirm()
   const toast = useToast()
 
-  // Filter out unavailable; sort by affordability (affordable first), then cost asc
-  const visibleRewards = useMemo(() => {
-    return recompenses
-      .filter((r) => r.disponible)
-      .sort((a, b) => {
-        const aAfford = a.pointsRequis <= currentBalance
-        const bAfford = b.pointsRequis <= currentBalance
-        if (aAfford && !bAfford) return -1
-        if (!aAfford && bAfford) return 1
-        return a.pointsRequis - b.pointsRequis
-      })
+  // Split catalog: affordable now vs future objectives
+  const { affordable, objectives } = useMemo(() => {
+    const available = recompenses.filter((r) => r.disponible)
+    const affordable = available
+      .filter((r) => r.pointsRequis <= currentBalance)
+      .sort((a, b) => a.pointsRequis - b.pointsRequis)
+    const objectives = available
+      .filter((r) => r.pointsRequis > currentBalance)
+      .sort((a, b) => a.pointsRequis - b.pointsRequis)
+    return { affordable, objectives }
   }, [recompenses, currentBalance])
 
   // Block double-requesting the SAME reward while the prior is still pending
@@ -197,11 +197,11 @@ export function RecompensesEleveSection({
 
   return (
     <>
-      {/* ─── Catalog ───────────────────────────────── */}
+      {/* ─── À votre portée ────────────────────────── */}
       <div className="space-y-3">
         <SectionHeading
-          icon={<Gift className="h-4 w-4" aria-hidden />}
-          title="Récompenses disponibles"
+          icon={<Sparkles className="h-4 w-4" aria-hidden />}
+          title="À votre portée"
           subtitle={`Solde actuel : ${currentBalance} pts`}
         />
 
@@ -210,31 +210,57 @@ export function RecompensesEleveSection({
             <Skeleton className="h-20 w-full rounded-lg" />
             <Skeleton className="h-20 w-full rounded-lg" />
           </div>
-        ) : visibleRewards.length === 0 ? (
-          <EmptyState
-            icon={<Gift className="h-8 w-8" />}
-            title="Catalogue vide"
-            description="L'administration n'a pas encore ajouté de récompenses au catalogue. Revenez bientôt."
-          />
+        ) : affordable.length === 0 ? (
+          <p className="text-[0.82rem] text-ink-500 italic px-1">
+            Aucune récompense accessible avec votre solde actuel. Continuez à participer aux quêtes !
+          </p>
         ) : (
           <div className="space-y-2">
-            {visibleRewards.map((r) => {
-              const canAfford = r.pointsRequis <= currentBalance
-              const hasPending = pendingRewardIds.has(r.id)
-              return (
-                <RewardCard
-                  key={r.id}
-                  recompense={r}
-                  canAfford={canAfford}
-                  hasPending={hasPending}
-                  currentBalance={currentBalance}
-                  onRequest={() => setRequesting(r)}
-                />
-              )
-            })}
+            {affordable.map((r) => (
+              <RewardCard
+                key={r.id}
+                recompense={r}
+                canAfford
+                hasPending={pendingRewardIds.has(r.id)}
+                currentBalance={currentBalance}
+                onRequest={() => setRequesting(r)}
+              />
+            ))}
           </div>
         )}
       </div>
+
+      {/* ─── Objectifs ────────────────────────────── */}
+      {!loadingCatalog && objectives.length > 0 && (
+        <div className="space-y-3 mt-6">
+          <SectionHeading
+            icon={<Target className="h-4 w-4" aria-hidden />}
+            title="Objectifs"
+            subtitle="Continuez à gagner des points pour les débloquer"
+          />
+          <div className="space-y-2">
+            {objectives.map((r) => (
+              <RewardCard
+                key={r.id}
+                recompense={r}
+                canAfford={false}
+                hasPending={false}
+                currentBalance={currentBalance}
+                onRequest={() => {}}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Catalogue vide ───────────────────────── */}
+      {!loadingCatalog && affordable.length === 0 && objectives.length === 0 && (
+        <EmptyState
+          icon={<Gift className="h-8 w-8" />}
+          title="Catalogue vide"
+          description="L'administration n'a pas encore ajouté de récompenses au catalogue. Revenez bientôt."
+        />
+      )}
 
       {/* ─── Mes réclamations ─────────────────────── */}
       <div className="space-y-3 mt-6">
