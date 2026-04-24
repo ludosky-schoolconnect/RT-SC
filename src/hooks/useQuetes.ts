@@ -325,7 +325,7 @@ export function useAllPendingClaims() {
       (err) => {
         console.error('[useAllPendingClaims] snapshot error:', err)
         firstSnapshotSeen.add(keyId)
-        qc.setQueryData(key, [])
+        if (qc.getQueryData(key) === undefined) qc.setQueryData(key, [])
         qc.invalidateQueries({ queryKey: key })
       }
     )
@@ -679,7 +679,12 @@ export function useRejectClaim() {
         const claimRef = doc(db, queteClaimDoc(input.queteId, input.claimId))
         const queteRef = doc(db, queteDoc(input.queteId))
 
-        const claimSnap = await tx.get(claimRef)
+        // All reads must come before any writes in a Firestore transaction.
+        const [claimSnap, queteSnap] = await Promise.all([
+          tx.get(claimRef),
+          tx.get(queteRef),
+        ])
+
         if (!claimSnap.exists()) throw new Error('Réclamation introuvable.')
         const claim = claimSnap.data() as QueteClaim
 
@@ -687,11 +692,9 @@ export function useRejectClaim() {
           throw new Error(`Cette réclamation n'est plus en attente.`)
         }
 
-        // Delete the claim — no point keeping a rejected doc around.
+        // Writes — delete claim, then free the slot.
         tx.delete(claimRef)
 
-        // Free the slot; reopen quest if it was 'complete' and now has room.
-        const queteSnap = await tx.get(queteRef)
         if (queteSnap.exists()) {
           const q = queteSnap.data() as Quete
           const newSlotsTaken = Math.max(0, q.slotsTaken - 1)

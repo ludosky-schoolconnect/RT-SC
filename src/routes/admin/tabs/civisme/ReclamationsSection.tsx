@@ -191,7 +191,7 @@ function ReclamationRow({ reclamation: r }: { reclamation: Reclamation }) {
     if (!profil) return
     const ok = await confirm({
       title: `Honorer pour ${r.eleveNom} ?`,
-      message: `Confirmez que vous avez remis "${r.recompenseNom}" à l'élève. ${r.pointsCout} pts seront déduits de son solde.`,
+      message: `Confirmez que vous avez remis « ${r.recompenseNom} » à ${r.eleveNom}. Les ${r.pointsCout} pts ont déjà été déduits lors de la demande.`,
       confirmLabel: 'Honorer',
       variant: 'warning',
     })
@@ -280,7 +280,7 @@ function ReclamationRow({ reclamation: r }: { reclamation: Reclamation }) {
                 })}
               </span>
             )}
-            <span className="text-ink-500 capitalize">
+            <span className="text-ink-500">
               · par {labelForActor(r)}
             </span>
           </div>
@@ -302,8 +302,11 @@ function ReclamationRow({ reclamation: r }: { reclamation: Reclamation }) {
           )}
           {r.statut === 'annulee' && (
             <p className="text-[0.68rem] text-danger italic mt-1.5">
-              Annulée{r.annuleeParNom && ` par ${r.annuleeParNom}`}
-              {r.annulationReason && ` — "${r.annulationReason}"`}
+              Annulée
+              {r.annuleeLe &&
+                ` le ${(r.annuleeLe as { toDate?: () => Date })?.toDate?.()?.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+              {r.annuleeParNom && ` par ${r.annuleeParNom}`}
+              {r.annulationReason && ` — « ${r.annulationReason} »`}
             </p>
           )}
         </div>
@@ -325,6 +328,7 @@ function ReclamationRow({ reclamation: r }: { reclamation: Reclamation }) {
             variant="secondary"
             size="sm"
             onClick={handleCancel}
+            loading={cancelMut.isPending}
             disabled={fulfillMut.isPending || cancelMut.isPending}
             leadingIcon={<XCircle className="h-4 w-4" aria-hidden />}
           >

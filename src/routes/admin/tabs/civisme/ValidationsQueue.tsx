@@ -31,7 +31,6 @@ import type { QueteClaim } from '@/types/models'
 
 export function ValidationsQueue() {
   const { data: claims = [], isLoading } = useAllPendingClaims()
-  const { data: pendingCount = claims.length } = { data: claims.length }
 
   // Oldest first — FIFO processing order
   const sorted = useMemo(
@@ -51,9 +50,9 @@ export function ValidationsQueue() {
         description={
           isLoading
             ? 'Chargement…'
-            : pendingCount === 0
+            : sorted.length === 0
               ? 'Aucune participation en attente'
-              : `${pendingCount} participation${pendingCount > 1 ? 's' : ''} en attente`
+              : `${sorted.length} participation${sorted.length > 1 ? 's' : ''} en attente`
         }
       />
 
