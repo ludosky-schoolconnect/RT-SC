@@ -32,9 +32,12 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { doc, updateDoc } from 'firebase/firestore'
+import {
+  collection, doc, runTransaction, serverTimestamp,
+} from 'firebase/firestore'
 import { db } from '@/firebase'
-import { eleveDoc } from '@/lib/firestore-keys'
+import { civismeHistoryCol, eleveDoc } from '@/lib/firestore-keys'
+import { useAuthStore } from '@/stores/auth'
 import type { Eleve } from '@/types/models'
 
 export const CIVISME_FLOOR = -10
@@ -51,6 +54,7 @@ export interface AdjustCivismeInput {
 
 export function useAdjustCivisme() {
   const qc = useQueryClient()
+  const profil = useAuthStore((s) => s.profil)
 
   return useMutation({
     mutationFn: async (input: AdjustCivismeInput): Promise<number> => {
@@ -59,11 +63,23 @@ export function useAdjustCivisme() {
         CIVISME_FLOOR,
         Math.min(CIVISME_CEILING, current + input.delta)
       )
-      // No-op if we're already at the boundary
       if (next === current) return current
 
-      await updateDoc(doc(db, eleveDoc(input.classeId, input.eleveId)), {
-        civismePoints: next,
+      const eleveRef = doc(db, eleveDoc(input.classeId, input.eleveId))
+      const historyRef = doc(
+        collection(db, civismeHistoryCol(input.classeId, input.eleveId))
+      )
+
+      await runTransaction(db, async (tx) => {
+        tx.update(eleveRef, { civismePoints: next })
+        tx.set(historyRef, {
+          delta: input.delta,
+          raison: 'ajustement_manuel',
+          date: serverTimestamp(),
+          parUid: profil?.id ?? 'admin',
+          ...(profil?.nom ? { parNom: profil.nom } : {}),
+          soldeApres: next,
+        })
       })
       return next
     },

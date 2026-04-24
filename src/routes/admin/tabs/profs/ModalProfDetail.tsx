@@ -164,7 +164,7 @@ export function ModalProfDetail({
     if (!prof) return
     const ok = await confirm({
       title: `Retirer ${prof.nom} ?`,
-      message: `Le professeur n'aura plus accès à la plateforme et sera retiré de toutes ses classes (${prof.classesIds?.length ?? 0}). Le compte Firebase reste créé. Action irréversible côté SchoolConnect.`,
+      message: `Le professeur n'aura plus accès à la plateforme et sera retiré de toutes ses classes (${prof.classesIds?.length ?? 0}). Son compte d'accès sera automatiquement supprimé. Action irréversible.`,
       confirmLabel: 'Retirer',
       variant: 'danger',
     })

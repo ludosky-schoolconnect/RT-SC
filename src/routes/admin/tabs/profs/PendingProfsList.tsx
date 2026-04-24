@@ -55,7 +55,7 @@ export function PendingProfsList({ pending }: PendingProfsListProps) {
     const ok = await confirm({
       title: `Rejeter la demande de ${p.nom} ?`,
       message:
-        "La demande sera supprimée de la plateforme. Le compte Firebase reste créé mais sans profil sur l'application.",
+        "La demande sera supprimée de la plateforme. Le compte d'accès sera automatiquement désactivé.",
       confirmLabel: 'Rejeter',
       variant: 'danger',
     })

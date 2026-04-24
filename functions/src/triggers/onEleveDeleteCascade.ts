@@ -45,7 +45,7 @@
 
 import { onDocumentDeleted } from 'firebase-functions/v2/firestore'
 import { logger } from 'firebase-functions/v2'
-import { db } from '../lib/firebase.js'
+import { auth, db } from '../lib/firebase.js'
 
 const BATCH_SIZE = 450
 
@@ -162,6 +162,55 @@ export const onEleveDeleteCascade = onDocumentDeleted(
         eleveId,
         err: (err as Error).message,
       })
+    }
+
+    // ─── 4. Reclamations at root level ────────────────────────
+    try {
+      const reclSnap = await db
+        .collection('reclamations')
+        .where('eleveId', '==', eleveId)
+        .get()
+      for (let i = 0; i < reclSnap.docs.length; i += BATCH_SIZE) {
+        const chunk = reclSnap.docs.slice(i, i + BATCH_SIZE)
+        const batch = db.batch()
+        for (const d of chunk) batch.delete(d.ref)
+        await batch.commit()
+      }
+      logger.info('onEleveDeleteCascade: reclamations cleaned', {
+        eleveId,
+        count: reclSnap.size,
+      })
+    } catch (err) {
+      logger.error('onEleveDeleteCascade: reclamations cleanup failed', {
+        eleveId,
+        err: (err as Error).message,
+      })
+    }
+
+    // ─── 5. Anonymous Firebase Auth account ───────────────────
+    // active_session_uid is set on login by signInAnonymously. If
+    // the élève never logged in, the field is absent — safe to skip.
+    const activeUid = (event.data?.data() as { active_session_uid?: string } | undefined)
+      ?.active_session_uid
+    if (activeUid) {
+      try {
+        await auth.deleteUser(activeUid)
+        logger.info('onEleveDeleteCascade: anonymous Auth account deleted', {
+          eleveId,
+          activeUid,
+        })
+      } catch (err) {
+        const e = err as { code?: string }
+        if (e.code === 'auth/user-not-found') {
+          // Already gone — no-op
+        } else {
+          logger.error('onEleveDeleteCascade: Auth account deletion failed', {
+            eleveId,
+            activeUid,
+            err: (err as Error).message,
+          })
+        }
+      }
     }
 
     logger.info('onEleveDeleteCascade: done', { classeId, eleveId })
