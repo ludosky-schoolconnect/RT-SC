@@ -114,6 +114,20 @@ function writeGate(u: GateUnlock): void {
 }
 
 /**
+ * Write a synthetic gate entry after a successful password-based
+ * re-auth (admin role). Reuses the same sessionStorage slot so
+ * InactivityGuard.hasValidUnlock() / clearGateUnlock() work
+ * identically across all personnel roles.
+ */
+export function writePersonnelGate(uid: string): void {
+  writeGate({
+    token: `admin:${Date.now()}`,
+    uid,
+    expiresAt: Date.now() + 4 * 60 * 60 * 1000,
+  })
+}
+
+/**
  * Clear any stored gate unlock. Called when a code check fails so
  * stale tokens don't accidentally let someone bypass a subsequent
  * check.

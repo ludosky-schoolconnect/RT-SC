@@ -25,6 +25,7 @@ import { Navigate } from 'react-router-dom'
 import { useState, type ReactNode } from 'react'
 import { useAuth } from '@/stores/auth'
 import { PersonnelCodeGate } from '@/components/auth/PersonnelCodeGate'
+import { AdminPasswordGate } from '@/components/auth/AdminPasswordGate'
 import { InactivityGuard } from '@/components/auth/InactivityGuard'
 import type { Role } from '@/types/roles'
 
@@ -45,11 +46,10 @@ const HOME_BY_ROLE: Record<Exclude<Role, null>, string> = {
   parent: '/parent',
 }
 
-// Roles that get the personal-code gate + inactivity guard. These
-// are the staff roles whose dashboards expose grades, payments, and
-// admin tooling — high-sensitivity surfaces that need defense in
-// depth beyond Firebase Auth's persistent session.
-const PERSONNEL_ROLES = new Set<Exclude<Role, null>>(['admin', 'prof', 'caissier'])
+// Roles that get the personal-code (passkey) gate + inactivity guard.
+// Admin is excluded here — it uses AdminPasswordGate instead (password
+// re-auth) because admin accounts have no personal 6-digit passkey.
+const PASSKEY_ROLES = new Set<Exclude<Role, null>>(['prof', 'caissier'])
 
 export function ProtectedRoute({ role, enforceProfActif = true, children }: Props) {
   const { hydrating, role: currentRole, profil } = useAuth()
@@ -90,8 +90,18 @@ export function ProtectedRoute({ role, enforceProfActif = true, children }: Prop
     return <Navigate to="/prof/en-attente" replace />
   }
 
-  // Personnel roles get the code gate + inactivity guard.
-  if (PERSONNEL_ROLES.has(role)) {
+  // Admin gets password re-auth gate (no personal passkey exists for admin).
+  if (role === 'admin') {
+    return (
+      <>
+        <InactivityGuard onLock={() => setLockNonce((n) => n + 1)} />
+        <AdminPasswordGate key={lockNonce}>{children}</AdminPasswordGate>
+      </>
+    )
+  }
+
+  // Prof + caissier get the personal-code (passkey) gate + inactivity guard.
+  if (PASSKEY_ROLES.has(role)) {
     return (
       <>
         <InactivityGuard onLock={() => setLockNonce((n) => n + 1)} />
