@@ -26,7 +26,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label
             htmlFor={textareaId}
-            className="text-[0.8125rem] font-semibold text-ink-800"
+            className="text-sm font-semibold text-ink-700"
           >
             {label}
           </label>
@@ -38,7 +38,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             'w-full min-h-[100px] rounded-md border-[1.5px] bg-white px-4 py-3 text-[0.9375rem] resize-y',
             'placeholder:text-ink-400 text-ink-800',
             'transition-colors duration-150 ease-out-soft',
-            'focus:outline-none focus:border-navy focus:ring-2 focus:ring-gold/30',
+            'focus:outline-none focus:border-navy focus:ring-2 focus:ring-gold/40',
             'disabled:bg-ink-50 disabled:text-ink-400 disabled:cursor-not-allowed',
             error
               ? 'border-danger focus:border-danger focus:ring-danger/20'

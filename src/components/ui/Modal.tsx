@@ -324,7 +324,7 @@ export function ModalFooter({ className, children, ...rest }: SubProps) {
   return (
     <div
       className={cn(
-        'flex items-center justify-end gap-2 px-6 py-4 border-t border-ink-100 bg-ink-50/40',
+        'flex items-center justify-end gap-2 px-6 py-4 border-t border-ink-100 bg-ink-50',
         className
       )}
       {...rest}

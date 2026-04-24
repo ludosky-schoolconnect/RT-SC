@@ -52,7 +52,7 @@ export function AuthLayout({
         >
           <header className="text-center mb-8 mt-2">
             {kicker && (
-              <p className="text-[0.7rem] font-bold uppercase tracking-widest text-ink-400 mb-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-ink-400 mb-2">
                 {kicker}
               </p>
             )}

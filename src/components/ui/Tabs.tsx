@@ -58,7 +58,7 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
             {active && (
               <motion.span
                 layoutId="rt-sc-tab-indicator"
-                className="absolute inset-x-2 bottom-0 h-[2.5px] bg-gold rounded-t-full"
+                className="absolute inset-x-2 bottom-0 h-[3px] bg-gold rounded-t-full"
                 transition={{ type: 'spring', stiffness: 380, damping: 32 }}
               />
             )}

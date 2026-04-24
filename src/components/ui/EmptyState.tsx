@@ -32,7 +32,7 @@ export function EmptyState({
       )}
     >
       {icon && (
-        <div className="mb-3 text-ink-400" aria-hidden>
+        <div className="mb-4 text-ink-300 [&>svg]:h-10 [&>svg]:w-10" aria-hidden>
           {icon}
         </div>
       )}

@@ -53,7 +53,7 @@ export function ConfirmDialog() {
         </h2>
         <p className="text-sm text-ink-600 leading-relaxed">{message}</p>
       </ModalBody>
-      <ModalFooter className="bg-white border-t-0 pt-2 pb-6 px-6 justify-center gap-2">
+      <ModalFooter className="justify-center gap-3 py-4">
         <Button variant="secondary" onClick={cancel}>
           {cancelLabel}
         </Button>
