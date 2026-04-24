@@ -18,12 +18,18 @@ import {
   History,
   Plus,
   Minus,
+  RotateCcw,
 } from 'lucide-react'
 import { useCivismeHistory } from '@/hooks/useCivismeHistory'
+import { useUndoIncident } from '@/hooks/useIncident'
+import { useConfirm } from '@/stores/confirm'
+import { useToast } from '@/stores/toast'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/cn'
 import type { CivismeHistoryEntry, CivismeHistoryRaison } from '@/types/models'
+
+const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000
 
 interface Props {
   classeId: string
@@ -32,6 +38,9 @@ interface Props {
   maxRows?: number
   /** Compact mode for the parent widget — slimmer rows, no header */
   compact?: boolean
+  /** When provided, incident rows within 24 h show an undo button (admin only) */
+  adminUid?: string
+  adminNom?: string
 }
 
 export function HistoriqueSection({
@@ -39,12 +48,39 @@ export function HistoriqueSection({
   eleveId,
   maxRows = 10,
   compact = false,
+  adminUid,
+  adminNom,
 }: Props) {
   const { data: entries = [], isLoading } = useCivismeHistory(
     classeId,
     eleveId,
     maxRows
   )
+  const undoMut = useUndoIncident()
+  const confirm = useConfirm()
+  const toast = useToast()
+
+  async function handleUndo(entry: CivismeHistoryEntry) {
+    const ok = await confirm({
+      title: 'Annuler cet incident ?',
+      message: `Les ${Math.abs(entry.delta)} pts retirés à ${entry.parNom ? `(par ${entry.parNom})` : ''} seront remboursés et l'entrée supprimée.`,
+      confirmLabel: 'Annuler l\'incident',
+      variant: 'warning',
+    })
+    if (!ok) return
+    try {
+      const result = await undoMut.mutateAsync({
+        classeId,
+        eleveId,
+        historyEntryId: entry.id,
+        undoneByUid: adminUid!,
+        undoneByNom: adminNom,
+      })
+      toast.success(`Incident annulé. +${Math.abs(entry.delta)} pts remboursés (solde : ${result.newBalance} pts).`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Impossible d\'annuler cet incident.')
+    }
+  }
 
   if (isLoading) {
     return (
@@ -74,11 +110,31 @@ export function HistoriqueSection({
 
   return (
     <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
-      {entries.map((e) => (
-        <HistoryRow key={e.id} entry={e} compact={compact} />
-      ))}
+      {entries.map((e) => {
+        const canUndo =
+          !compact &&
+          !!adminUid &&
+          e.raison === 'incident' &&
+          isWithin24h(e)
+        return (
+          <HistoryRow
+            key={e.id}
+            entry={e}
+            compact={compact}
+            onUndo={canUndo ? () => handleUndo(e) : undefined}
+            undoing={undoMut.isPending}
+          />
+        )
+      })}
     </div>
   )
+}
+
+function isWithin24h(entry: CivismeHistoryEntry): boolean {
+  const ts = entry.date as { toMillis?: () => number }
+  return typeof ts?.toMillis === 'function'
+    ? Date.now() - ts.toMillis() < UNDO_WINDOW_MS
+    : false
 }
 
 // ─── Per-row ───────────────────────────────────────────────
@@ -86,9 +142,13 @@ export function HistoriqueSection({
 function HistoryRow({
   entry: e,
   compact,
+  onUndo,
+  undoing,
 }: {
   entry: CivismeHistoryEntry
   compact: boolean
+  onUndo?: () => void
+  undoing?: boolean
 }) {
   const date = (e.date as { toDate?: () => Date })?.toDate?.()
   const meta = RAISON_META[e.raison]
@@ -152,11 +212,27 @@ function HistoryRow({
         </div>
       </div>
 
-      {isGain && !compact && (
-        <Plus className="h-3.5 w-3.5 text-success shrink-0 mt-1" aria-hidden />
-      )}
-      {!isGain && !compact && (
-        <Minus className="h-3.5 w-3.5 text-danger shrink-0 mt-1" aria-hidden />
+      {/* Trailing indicator / undo button */}
+      {onUndo ? (
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={undoing}
+          title="Annuler cet incident (24 h)"
+          className="shrink-0 mt-0.5 flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.68rem] font-semibold text-danger hover:bg-danger-bg transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40"
+        >
+          <RotateCcw className="h-3 w-3" aria-hidden />
+          Annuler
+        </button>
+      ) : (
+        <>
+          {isGain && !compact && (
+            <Plus className="h-3.5 w-3.5 text-success shrink-0 mt-1" aria-hidden />
+          )}
+          {!isGain && !compact && (
+            <Minus className="h-3.5 w-3.5 text-danger shrink-0 mt-1" aria-hidden />
+          )}
+        </>
       )}
     </div>
   )

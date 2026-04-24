@@ -24,7 +24,7 @@
 
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Award, Minus, Plus, Info, AlertTriangle, Crown } from 'lucide-react'
+import { Award, Minus, Plus, Info, AlertTriangle, Crown, History } from 'lucide-react'
 import { useClasses } from '@/hooks/useClasses'
 import { useEleves } from '@/hooks/useEleves'
 import {
@@ -42,7 +42,14 @@ import { Section, SectionHeader } from '@/components/layout/Section'
 import { Select } from '@/components/ui/Select'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import {
+  Modal,
+  ModalHeader,
+  ModalTitle,
+  ModalBody,
+} from '@/components/ui/Modal'
 import { ReportIncidentModal } from '@/routes/_shared/civisme/ReportIncidentModal'
+import { HistoriqueSection } from '@/routes/_shared/civisme/HistoriqueSection'
 import { cn } from '@/lib/cn'
 import { nomClasse } from '@/lib/benin'
 import type { Eleve } from '@/types/models'
@@ -253,6 +260,7 @@ function EleveCivismeCard({
   const toast = useToast()
   const profil = useAuthStore((s) => s.profil)
   const [incidentOpen, setIncidentOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const pts = eleve.civismePoints ?? 0
   const tier = civismeTier(pts)
   const isCritical = tier === 'critical'
@@ -351,16 +359,26 @@ function EleveCivismeCard({
         </div>
       </div>
 
-      {/* Incident reporting — expanded action below the main row */}
-      <button
-        type="button"
-        onClick={() => setIncidentOpen(true)}
-        disabled={!profil || pts <= CIVISME_FLOOR}
-        className="w-full mt-2.5 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[0.78rem] font-bold text-danger-dark bg-danger-bg/60 hover:bg-danger/15 transition-colors ring-1 ring-danger/20 disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-        Signaler un incident
-      </button>
+      {/* Actions row */}
+      <div className="flex gap-2 mt-2.5">
+        <button
+          type="button"
+          onClick={() => setIncidentOpen(true)}
+          disabled={!profil || pts <= CIVISME_FLOOR}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[0.78rem] font-bold text-danger-dark bg-danger-bg/60 hover:bg-danger/15 transition-colors ring-1 ring-danger/20 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+          Incident
+        </button>
+        <button
+          type="button"
+          onClick={() => setHistoryOpen(true)}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[0.78rem] font-bold text-navy bg-navy/5 hover:bg-navy/10 transition-colors ring-1 ring-navy/15"
+        >
+          <History className="h-3.5 w-3.5" aria-hidden />
+          Historique
+        </button>
+      </div>
 
       {profil && (
         <ReportIncidentModal
@@ -373,6 +391,23 @@ function EleveCivismeCard({
           parUid={profil.id}
           parNom={profil.nom}
         />
+      )}
+
+      {profil && (
+        <Modal open={historyOpen} onClose={() => setHistoryOpen(false)} size="md">
+          <ModalHeader>
+            <ModalTitle>Historique — {eleve.nom}</ModalTitle>
+          </ModalHeader>
+          <ModalBody>
+            <HistoriqueSection
+              classeId={classeId}
+              eleveId={eleve.id}
+              maxRows={15}
+              adminUid={profil.id}
+              adminNom={profil.nom}
+            />
+          </ModalBody>
+        </Modal>
       )}
     </motion.div>
   )
