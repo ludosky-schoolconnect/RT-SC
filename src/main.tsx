@@ -150,34 +150,34 @@ const persister = createSyncStoragePersister({
   throttleTime: 1_000,
 })
 
-// Fire-and-forget: sync runs in parallel with React's first render.
-// By the time any user interaction occurs, the offset is set.
-syncServerTime()
-startPeriodicTimeSync()
-
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('#root element not found in index.html')
 
-createRoot(rootEl).render(
-  <StrictMode>
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{
-        persister,
-        // Evict persisted entries older than 24h on load. Aligns with
-        // gcTime above. Older data can be safely refetched.
-        maxAge: 24 * 60 * 60_000,
-        // Bump this string any time queryKey shapes change to force a
-        // full rehydrate cycle on existing installs.
-        buster: 'v1',
-      }}
-    >
-      <BrowserRouter>
-        <OfflineBanner />
-        <App />
-        <UpdateReadyToast />
-        <PwaInstallBanner />
-      </BrowserRouter>
-    </PersistQueryClientProvider>
-  </StrictMode>
-)
+function mount() {
+  createRoot(rootEl!).render(
+    <StrictMode>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister,
+          maxAge: 24 * 60 * 60_000,
+          buster: 'v1',
+        }}
+      >
+        <BrowserRouter>
+          <OfflineBanner />
+          <App />
+          <UpdateReadyToast />
+          <PwaInstallBanner />
+        </BrowserRouter>
+      </PersistQueryClientProvider>
+    </StrictMode>
+  )
+}
+
+// Wait for the server time API before mounting so the very first render
+// already has the correct time — no component ever sees device clock.
+// If the API is unreachable (offline), .finally() still mounts immediately
+// with the device-clock fallback rather than hanging the app.
+startPeriodicTimeSync()
+syncServerTime().finally(mount)
