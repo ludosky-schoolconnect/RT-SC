@@ -17,6 +17,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { PalmaresResult } from '@/hooks/usePalmares'
 import { rankClasses } from '@/hooks/usePalmares'
+import { serverNow } from '@/lib/serverTime'
 
 const NAVY: [number, number, number] = [11, 37, 69]
 const GOLD: [number, number, number] = [201, 168, 76]
@@ -134,7 +135,7 @@ function drawHeader(
   const right: string[] = []
   if (anneeScolaire) right.push(`Année ${anneeScolaire}`)
   right.push(
-    `Édité le ${new Date().toLocaleDateString('fr-FR', {
+    `Édité le ${serverNow().toLocaleDateString('fr-FR', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',

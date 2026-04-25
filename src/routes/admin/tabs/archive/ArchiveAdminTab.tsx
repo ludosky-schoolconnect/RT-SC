@@ -56,6 +56,7 @@ import {
   type AbsenceExportRow,
 } from '@/lib/absence-export'
 import { cn } from '@/lib/cn'
+import { serverNow } from '@/lib/serverTime'
 import type { ArchivedAbsence, Classe } from '@/types/models'
 
 // ─── Date helpers ─────────────────────────────────────────────
@@ -103,12 +104,12 @@ export function ArchiveAdminTab() {
   const { data: classes = [] } = useClasses()
 
   const [fromDateStr, setFromDateStr] = useState<string>(() => {
-    const d = new Date()
+    const d = serverNow()
     d.setDate(d.getDate() - DEFAULT_LOOKBACK_DAYS)
     return dateInputValue(d)
   })
   const [toDateStr, setToDateStr] = useState<string>(() =>
-    dateInputValue(new Date())
+    dateInputValue(serverNow())
   )
 
   const range = useMemo<ArchiveRange>(() => {
@@ -195,20 +196,20 @@ export function ArchiveAdminTab() {
   }, [filteredFlat])
 
   function setRangeLast(days: number) {
-    const d = new Date()
+    const d = serverNow()
     d.setDate(d.getDate() - days)
     setFromDateStr(dateInputValue(d))
-    setToDateStr(dateInputValue(new Date()))
+    setToDateStr(dateInputValue(serverNow()))
   }
 
   // Which preset (if any) matches the current range? A preset is active
   // when `from === today − N days` AND `to === today`. We check the
   // dates as strings (not millis) so DST/time-of-day don't matter.
   const activeDays = useMemo<number | null>(() => {
-    const todayStr = dateInputValue(new Date())
+    const todayStr = dateInputValue(serverNow())
     if (toDateStr !== todayStr) return null
     for (const n of [7, 30, 90, 365]) {
-      const d = new Date()
+      const d = serverNow()
       d.setDate(d.getDate() - n)
       if (dateInputValue(d) === fromDateStr) return n
     }

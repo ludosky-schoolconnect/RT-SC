@@ -17,6 +17,7 @@
  */
 
 import jsPDF from 'jspdf'
+import { serverNow } from '@/lib/serverTime'
 
 // A4 landscape in mm
 const PAGE_W = 297
@@ -199,7 +200,7 @@ function drawCertificate(doc: jsPDF, input: CivismeCertInput): void {
   const footerParts: string[] = []
   if (input.anneeScolaire) footerParts.push(`Année scolaire ${input.anneeScolaire}`)
   footerParts.push(
-    `Délivré le ${new Date().toLocaleDateString('fr-FR', {
+    `Délivré le ${serverNow().toLocaleDateString('fr-FR', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',

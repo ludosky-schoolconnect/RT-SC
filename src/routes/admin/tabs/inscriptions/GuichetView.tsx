@@ -48,6 +48,7 @@ import {
 import { formatFCFA } from '@/hooks/usePaiements'
 import { nomClasse } from '@/lib/benin'
 import { exportReceiptPDF } from '@/lib/receipt-export'
+import { serverNow } from '@/lib/serverTime'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import type { Classe, PreInscription } from '@/types/models'
 
@@ -164,7 +165,7 @@ export function GuichetView() {
         montant,
         methode: methode.trim(),
         caissier,
-        date: new Date(),
+        date: serverNow(),
       })
       setCredentials(res)
       setCredModalOpen(true)

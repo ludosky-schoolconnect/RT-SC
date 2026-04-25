@@ -14,6 +14,7 @@
 
 import { useMemo } from 'react'
 import { Archive, Info } from 'lucide-react'
+import { serverNow } from '@/lib/serverTime'
 
 const MOIS_FR = [
   'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
@@ -33,7 +34,7 @@ function nextPurgeDateFr(now: Date): string {
 }
 
 export function MaintenanceCard() {
-  const nextDate = useMemo(() => nextPurgeDateFr(new Date()), [])
+  const nextDate = useMemo(() => nextPurgeDateFr(serverNow()), [])
 
   return (
     <div className="mt-8 rounded-lg border-[1.5px] border-ink-100 bg-white overflow-hidden">

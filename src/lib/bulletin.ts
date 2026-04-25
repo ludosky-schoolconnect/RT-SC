@@ -7,6 +7,7 @@
 
 import type { Genre } from '@/types/models'
 import { ordinalRang } from './benin'
+import { serverNow } from '@/lib/serverTime'
 
 // ─────────────────────────────────────────────────────────────
 // Per-subject (per-période)
@@ -419,7 +420,7 @@ export function listPeriodes(
 export function currentPeriode(
   typePeriode: 'Trimestre' | 'Semestre',
   nbPeriodes: number,
-  now: Date = new Date(),
+  now: Date = serverNow(),
   periodeDates?: Record<string, { debut: string; fin: string }>
 ): string {
   const periodes = listPeriodes(typePeriode, nbPeriodes)

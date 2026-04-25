@@ -26,6 +26,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { rvCounterDoc } from '@/lib/firestore-keys'
+import { serverNow } from '@/lib/serverTime'
 
 export const REPROG_MAX = 3
 export const DEFAULT_PLACES_PAR_JOUR = 35
@@ -135,7 +136,7 @@ export async function releaseSlot(dateDisplay: string): Promise<void> {
  * Compute the earliest legal start date given today + delaiMinJours.
  */
 export function computeEarliestStartDate(delaiMinJours: number): Date {
-  const d = new Date()
+  const d = serverNow()
   d.setDate(d.getDate() + Math.max(1, delaiMinJours))
   d.setHours(0, 0, 0, 0)
   return d

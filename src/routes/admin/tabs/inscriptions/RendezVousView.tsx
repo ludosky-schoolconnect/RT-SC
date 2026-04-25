@@ -43,6 +43,7 @@ import {
 } from '@/lib/inscription-rdv'
 import { nomClasse } from '@/lib/benin'
 import { cn } from '@/lib/cn'
+import { serverNow } from '@/lib/serverTime'
 import type { Classe, PreInscription } from '@/types/models'
 
 interface Props {
@@ -59,7 +60,7 @@ export function RendezVousView({ list }: Props) {
 
   // Group by dateRV
   const today = useMemo(() => {
-    const t = new Date()
+    const t = serverNow()
     t.setHours(0, 0, 0, 0)
     return t
   }, [])

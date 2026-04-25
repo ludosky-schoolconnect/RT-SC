@@ -33,6 +33,7 @@ import type { Timestamp } from 'firebase/firestore'
 import { ModalApprouverInscription } from './ModalApprouverInscription'
 import { ModalRefuserInscription } from './ModalRefuserInscription'
 import { ModalDocumentsViewer } from './ModalDocumentsViewer'
+import { serverNow } from '@/lib/serverTime'
 
 interface Props {
   list: PreInscription[]
@@ -64,7 +65,7 @@ function calculateAge(birthISO: string): string {
   if (!birthISO) return ''
   const birth = new Date(birthISO)
   if (isNaN(birth.getTime())) return ''
-  const now = new Date()
+  const now = serverNow()
   let age = now.getFullYear() - birth.getFullYear()
   const m = now.getMonth() - birth.getMonth()
   if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--

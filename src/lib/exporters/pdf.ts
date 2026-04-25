@@ -10,6 +10,7 @@
  */
 
 import type { ExportColumn, PdfMetadata } from './types'
+import { serverNow } from '@/lib/serverTime'
 
 interface PdfOptions<T> {
   filename: string
@@ -91,7 +92,7 @@ export async function exportToPdf<T>({
 
   // Footer
   const pageCount = doc.getNumberOfPages()
-  const generatedAt = (meta?.generatedAt ?? new Date()).toLocaleString('fr-FR')
+  const generatedAt = (meta?.generatedAt ?? serverNow()).toLocaleString('fr-FR')
   const footerText =
     meta?.footer ?? `SchoolConnect · Généré le ${generatedAt}`
   for (let i = 1; i <= pageCount; i++) {

@@ -33,6 +33,7 @@ import { useFinancesConfig, calculerCible, getEtatPaiement } from '@/hooks/useFi
 import { paiementsCol } from '@/lib/firestore-keys'
 import { formatFCFA } from '@/hooks/usePaiements'
 import { nomClasse } from '@/lib/benin'
+import { serverNow } from '@/lib/serverTime'
 
 interface BilanRow {
   eleveId: string
@@ -143,7 +144,7 @@ async function computeBilan(
     ...(retainAll
       ? { allRows: [...rows].sort((a, b) => a.nom.localeCompare(b.nom)) }
       : {}),
-    computedAt: new Date(),
+    computedAt: serverNow(),
   }
 }
 

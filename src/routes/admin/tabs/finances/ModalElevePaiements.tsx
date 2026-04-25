@@ -53,6 +53,7 @@ import { useFinancesConfig, calculerCible, getEtatPaiement } from '@/hooks/useFi
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import { useCaissier, resolveCaissierName } from '@/stores/caissier'
 import { exportReceiptPDF } from '@/lib/receipt-export'
+import { serverNow } from '@/lib/serverTime'
 import type { EleveWithClasse } from '@/hooks/useAllEleves'
 import type { Paiement } from '@/types/models'
 
@@ -130,7 +131,7 @@ export function ModalElevePaiements({
 
   function handleReceipt(p: Paiement) {
     if (!eleve) return
-    const date = tsToDate(p.date) ?? new Date()
+    const date = tsToDate(p.date) ?? serverNow()
     try {
       exportReceiptPDF({
         ecoleNom: ecole?.nom,

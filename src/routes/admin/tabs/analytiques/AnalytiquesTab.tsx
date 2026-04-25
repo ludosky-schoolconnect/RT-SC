@@ -54,6 +54,7 @@ import {
 } from '@/hooks/useSchoolAnalytics'
 import { useBulletinConfig } from '@/hooks/useBulletinConfig'
 import { listPeriodes, currentPeriode } from '@/lib/bulletin'
+import { serverNow } from '@/lib/serverTime'
 import { cn } from '@/lib/cn'
 
 // Design tokens
@@ -117,7 +118,7 @@ export function AnalytiquesTab() {
     return currentPeriode(
       bulletinConfig.typePeriode,
       bulletinConfig.nbPeriodes,
-      new Date(),
+      serverNow(),
       bulletinConfig.periodeDates
     )
   }, [bulletinConfig])
