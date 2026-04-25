@@ -187,6 +187,7 @@ export default function EleveLogin() {
       }
 
       setEleveSession(session)
+      setPinModalOpen(false)
       setStep('done')
 
       setTimeout(() => {
