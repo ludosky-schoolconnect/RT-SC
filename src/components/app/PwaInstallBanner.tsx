@@ -37,12 +37,11 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Download, X } from 'lucide-react'
-
-// Chrome's beforeinstallprompt event — not in lib.dom.d.ts
-interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
-}
+import {
+  getInstallPrompt,
+  clearInstallPrompt,
+  type BeforeInstallPromptEvent,
+} from '@/lib/pwaPrompt'
 
 export function PwaInstallBanner() {
   const [deferredPrompt, setDeferredPrompt] =
@@ -50,6 +49,14 @@ export function PwaInstallBanner() {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
+    // The event may have fired before React mounted — read the pre-captured value.
+    const early = getInstallPrompt()
+    if (early) {
+      setDeferredPrompt(early)
+      setVisible(true)
+    }
+
+    // Also listen for future firings (e.g. after dismiss + re-visit criteria met).
     function handler(e: Event) {
       e.preventDefault()
       setDeferredPrompt(e as BeforeInstallPromptEvent)
@@ -59,6 +66,7 @@ export function PwaInstallBanner() {
     function onInstalled() {
       setVisible(false)
       setDeferredPrompt(null)
+      clearInstallPrompt()
     }
 
     window.addEventListener('beforeinstallprompt', handler)

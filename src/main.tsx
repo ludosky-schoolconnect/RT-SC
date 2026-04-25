@@ -18,6 +18,7 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 
 import App from './App'
 import { syncServerTime, startPeriodicTimeSync } from '@/lib/serverTime'
+import '@/lib/pwaPrompt' // registers beforeinstallprompt listener before any async delay
 import { OfflineBanner } from '@/components/app/OfflineBanner'
 import { UpdateReadyToast } from '@/components/app/UpdateReadyToast'
 import { PwaInstallBanner } from '@/components/app/PwaInstallBanner'
@@ -154,6 +155,7 @@ const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('#root element not found in index.html')
 
 function mount() {
+  document.getElementById('sc-splash')?.remove()
   createRoot(rootEl!).render(
     <StrictMode>
       <PersistQueryClientProvider
