@@ -6,6 +6,7 @@
  */
 
 import type { Timestamp } from 'firebase/firestore'
+import { serverNow } from '@/lib/serverTime'
 
 const BENIN_TZ = 'Africa/Porto-Novo'
 
@@ -17,7 +18,7 @@ const BENIN_TZ = 'Africa/Porto-Novo'
  * Get the current hour in Bénin (0–23) using Intl.
  * Pure local computation, no network — fast and reliable.
  */
-export function beninLocalHour(now: Date = new Date()): number {
+export function beninLocalHour(now: Date = serverNow()): number {
   const hStr = new Intl.DateTimeFormat('en-US', {
     timeZone: BENIN_TZ,
     hour: 'numeric',
@@ -31,7 +32,7 @@ export function beninLocalHour(now: Date = new Date()): number {
 /**
  * Bénin local "HH:MM" string.
  */
-export function beninLocalHHMM(now: Date = new Date()): string {
+export function beninLocalHHMM(now: Date = serverNow()): string {
   const parts = new Intl.DateTimeFormat('fr-FR', {
     timeZone: BENIN_TZ,
     hour: '2-digit',
@@ -46,7 +47,7 @@ export function beninLocalHHMM(now: Date = new Date()): string {
 /**
  * Bénin weekday name in French (lowercase, e.g. "lundi").
  */
-export function beninJour(now: Date = new Date()): string {
+export function beninJour(now: Date = serverNow()): string {
   return new Intl.DateTimeFormat('fr-FR', {
     timeZone: BENIN_TZ,
     weekday: 'long',
@@ -60,20 +61,6 @@ export function beninJour(now: Date = new Date()): string {
 // Server-time absence guard
 // ─────────────────────────────────────────────────────────────
 
-/**
- * Try to fetch the server's idea of "now" via the Date header of an HTTP HEAD.
- * Returns a Date or throws when offline / no header.
- *
- * Used as the second layer of the absence declaration guard:
- * the user's local clock can be tampered with, but the server header cannot.
- */
-export async function fetchServerNow(): Promise<Date> {
-  const res = await fetch(window.location.href, { method: 'HEAD', cache: 'no-store' })
-  const dateHeader = res.headers.get('Date')
-  if (!dateHeader) throw new Error('No Date header from server')
-  return new Date(dateHeader)
-}
-
 export interface AbsenceWindowResult {
   allowed: boolean
   reason?: string
@@ -82,24 +69,14 @@ export interface AbsenceWindowResult {
 /**
  * Check whether absence declarations are currently allowed.
  * Window: 06:00 – 17:59 Bénin local time.
- *
- * Tries the server time first for tamper-resistance, falls back to local.
+ * Uses server-authoritative time — unaffected by device clock manipulation.
  */
 export async function isAbsenceWindowOpen(): Promise<AbsenceWindowResult> {
-  try {
-    const serverNow = await fetchServerNow()
-    const h = beninLocalHour(serverNow)
-    if (h < 6 || h >= 18) {
-      return { allowed: false, reason: 'Action rejetée par le serveur : Heure limite dépassée.' }
-    }
-    return { allowed: true }
-  } catch {
-    // Offline-strict policy from legacy: refuse rather than rely on local clock.
-    return {
-      allowed: false,
-      reason: 'Connexion au serveur impossible. Déclaration refusée par sécurité.',
-    }
+  const h = beninLocalHour(serverNow())
+  if (h < 6 || h >= 18) {
+    return { allowed: false, reason: 'Heure limite dépassée (autorisé 06h00 – 17h59).' }
   }
+  return { allowed: true }
 }
 
 /**
@@ -150,13 +127,18 @@ export function formatDateTime(ts: Timestamp | Date | string | undefined | null)
   })
 }
 
-/** YYYY-MM-DD for <input type="date"> values and presence doc IDs */
-export function todayISO(): string {
-  const d = new Date()
-  const yy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${yy}-${mm}-${dd}`
+/** YYYY-MM-DD in Bénin local time (Africa/Porto-Novo), using server time. */
+export function todayISO(now: Date = serverNow()): string {
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    timeZone: BENIN_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const y = parts.find((p) => p.type === 'year')?.value ?? ''
+  const m = parts.find((p) => p.type === 'month')?.value ?? ''
+  const d = parts.find((p) => p.type === 'day')?.value ?? ''
+  return `${y}-${m}-${d}`
 }
 
 /** Convert "YYYY-MM-DD" to "12 mars 2026" */
@@ -179,7 +161,7 @@ export interface WeekRange {
   end: Date
 }
 
-export function currentSchoolWeek(now: Date = new Date()): WeekRange {
+export function currentSchoolWeek(now: Date = serverNow()): WeekRange {
   const dayOfWeek = now.getDay()  // 0=Dim, 1=Lun, ..., 6=Sam
   const diffLundi = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
   const start = new Date(now)
@@ -191,7 +173,7 @@ export function currentSchoolWeek(now: Date = new Date()): WeekRange {
   return { start, end }
 }
 
-export function todayBoundaries(now: Date = new Date()): WeekRange {
+export function todayBoundaries(now: Date = serverNow()): WeekRange {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
   const end = new Date(now)

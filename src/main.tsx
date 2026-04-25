@@ -17,6 +17,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 
 import App from './App'
+import { syncServerTime, startPeriodicTimeSync } from '@/lib/serverTime'
 import { OfflineBanner } from '@/components/app/OfflineBanner'
 import { UpdateReadyToast } from '@/components/app/UpdateReadyToast'
 import { PwaInstallBanner } from '@/components/app/PwaInstallBanner'
@@ -148,6 +149,11 @@ const persister = createSyncStoragePersister({
   // Throttle writes so rapid mutations don't thrash localStorage
   throttleTime: 1_000,
 })
+
+// Fire-and-forget: sync runs in parallel with React's first render.
+// By the time any user interaction occurs, the offset is set.
+syncServerTime()
+startPeriodicTimeSync()
 
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('#root element not found in index.html')

@@ -4,6 +4,7 @@
  */
 
 import type { Cycle, Niveau, Serie, Genre, Classe } from '@/types/models'
+import { serverNow } from '@/lib/serverTime'
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -206,7 +207,7 @@ export function calculerAge(dateNaissance: string | undefined): number | null {
   if (!dateNaissance) return null
   const bd = new Date(dateNaissance)
   if (isNaN(bd.getTime())) return null
-  const td = new Date()
+  const td = serverNow()
   let age = td.getFullYear() - bd.getFullYear()
   if (td.getMonth() < bd.getMonth() || (td.getMonth() === bd.getMonth() && td.getDate() < bd.getDate())) {
     age--

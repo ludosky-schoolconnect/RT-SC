@@ -10,7 +10,9 @@
  * contextual to when the user is opening the app.
  */
 
-export function timeAwareGreeting(now: Date = new Date()): string {
+import { serverNow } from '@/lib/serverTime'
+
+export function timeAwareGreeting(now: Date = serverNow()): string {
   const h = now.getHours()
   if (h >= 5 && h < 12) return 'Bonjour'
   if (h >= 12 && h < 18) return 'Bon après-midi'

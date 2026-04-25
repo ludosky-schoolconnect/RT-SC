@@ -16,6 +16,7 @@
 
 import { jsPDF } from 'jspdf'
 import { formatFCFA } from '@/hooks/usePaiements'
+import { serverNow } from '@/lib/serverTime'
 
 interface ReceiptInput {
   ecoleNom?: string
@@ -129,7 +130,7 @@ export function exportReceiptPDF(input: ReceiptInput) {
   const ink600: [number, number, number] = [90, 102, 122]
   const ink400: [number, number, number] = [150, 160, 176]
 
-  const d = new Date()
+  const d = serverNow()
   const dateLine = formatDateFR(input.date)
   const amountStr = formatFCFA(input.montant)
   const amountWords = input.montantEnLettres || (

@@ -58,6 +58,7 @@ import { useClasses } from './useClasses'
 import { useEcoleConfig } from './useEcoleConfig'
 import { useBulletinConfig } from './useBulletinConfig'
 import { currentPeriode } from '@/lib/bulletin'
+import { serverNow } from '@/lib/serverTime'
 import type {
   Bulletin,
   Classe,
@@ -186,7 +187,7 @@ export function useSchoolAnalytics(periodeOverride?: string | null) {
       // Manual override wins when provided; otherwise auto-detect from today
       const currentPeriodeName =
         periodeOverride ??
-        currentPeriode(typePeriode, nbPeriodes, new Date(), periodeDates)
+        currentPeriode(typePeriode, nbPeriodes, serverNow(), periodeDates)
 
       // ─── 1. All eleves (used by multiple sections) ──────────
       // Use collectionGroup so we get every eleve across every class

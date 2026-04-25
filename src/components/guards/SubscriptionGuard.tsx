@@ -25,6 +25,7 @@ import { docRef } from '@/firebase'
 import { ecoleSubscriptionDoc } from '@/lib/firestore-keys'
 import { useAuth } from '@/stores/auth'
 import type { SubscriptionDoc } from '@/types/models'
+import { serverNow } from '@/lib/serverTime'
 
 interface Props {
   children: ReactNode
@@ -58,10 +59,10 @@ export function SubscriptionGuard({ children }: Props) {
         const data = snap.data() as SubscriptionDoc
 
         const deadline = data.deadline?.toDate ? data.deadline.toDate() : null
-        const gracedDeadline = deadline ? new Date(deadline.getTime() + GRACE_MS) : new Date()
+        const gracedDeadline = deadline ? new Date(deadline.getTime() + GRACE_MS) : serverNow()
         const isLocked =
           data.isManualLock === true ||
-          (deadline ? new Date() > gracedDeadline : false)
+          (deadline ? serverNow() > gracedDeadline : false)
 
         // Unlock transition → full reload to clear stale state.
         // EXCEPTION: if we're currently on /locked, DON'T reload —

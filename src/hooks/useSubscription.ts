@@ -27,6 +27,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { onSnapshot, getDoc, setDoc, Timestamp } from 'firebase/firestore'
 import { docRef } from '@/firebase'
 import { ecoleSubscriptionDoc } from '@/lib/firestore-keys'
+import { serverNow } from "@/lib/serverTime"
 import type { SubscriptionDoc } from '@/types/models'
 
 /** Grace period after deadline before actual lockout. Must match SubscriptionGuard. */
@@ -106,7 +107,7 @@ function computeSubscriptionState(
   raw: SubscriptionDoc | null,
   loading: boolean
 ): SubscriptionState {
-  const now = new Date()
+  const now = serverNow()
 
   const deadline = raw?.deadline?.toDate ? raw.deadline.toDate() : null
   const gracedDeadline = deadline
@@ -198,7 +199,7 @@ export function usePayAndExtendSubscription() {
         data?.subscriptionDurationMonths ??
         DEFAULT_DURATION_MONTHS
 
-      const now = new Date()
+      const now = serverNow()
       let base: Date
       let wasEarly = false
 

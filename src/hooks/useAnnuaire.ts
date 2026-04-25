@@ -25,6 +25,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { serverNow } from '@/lib/serverTime'
 import {
   collection,
   deleteDoc,
@@ -137,7 +138,7 @@ export function useUpsertAnnuaireEntry() {
   return useMutation({
     mutationFn: async (input: UpsertInput) => {
       const id = annuaireDocId(input.eleveId, input.slot)
-      const now = new Date()
+      const now = serverNow()
       const expireAt = new Date(now.getTime() + ONE_YEAR_MS)
       await setDoc(
         doc(db, annuaireParentsCol(), id),

@@ -4,10 +4,11 @@
  */
 
 import { useEffect, useState } from 'react'
+import { serverNow } from '@/lib/serverTime'
 
 const BENIN_TZ = 'Africa/Porto-Novo'
 
-function computeGreeting(now: Date = new Date()): string {
+function computeGreeting(now: Date = serverNow()): string {
   const hourStr = new Intl.DateTimeFormat('en-US', {
     timeZone: BENIN_TZ,
     hour: 'numeric',
@@ -20,7 +21,7 @@ function computeGreeting(now: Date = new Date()): string {
   return 'Bonsoir'
 }
 
-function formatToday(now: Date = new Date()): string {
+function formatToday(now: Date = serverNow()): string {
   // e.g. "Lundi 20 avril 2026"
   return new Intl.DateTimeFormat('fr-FR', {
     timeZone: BENIN_TZ,

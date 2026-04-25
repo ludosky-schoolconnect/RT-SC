@@ -65,21 +65,11 @@ export function useSaveAppel() {
   })
 }
 
-/** Helper: today's ISO date in Bénin local (Africa/Porto-Novo, UTC+1, no DST). */
-export function todayISO(now: Date = new Date()): string {
-  // Use local components — devices in Benin are on WAT.
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
+/** Helper: today's ISO date in Bénin local time using server-authoritative clock. */
+export { todayISO } from '@/lib/date'
 
-/** Helper: "HH:MM" of right now in local. */
-export function nowHHMM(now: Date = new Date()): string {
-  const h = String(now.getHours()).padStart(2, '0')
-  const m = String(now.getMinutes()).padStart(2, '0')
-  return `${h}:${m}`
-}
+/** Helper: "HH:MM" in Bénin local time using server-authoritative clock. */
+export { beninLocalHHMM as nowHHMM } from '@/lib/date'
 
 // Re-export Timestamp for convenience in callers if they need to construct
 // AbsentMark/RetardMark with their own timestamps.

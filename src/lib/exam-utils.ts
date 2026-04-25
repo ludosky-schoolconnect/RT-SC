@@ -9,6 +9,7 @@
  */
 
 import type { ExamCible, ExamCountdown } from '@/types/models'
+import { serverNow } from '@/lib/serverTime'
 
 /**
  * True if the given class name or niveau string represents one of the
@@ -78,7 +79,7 @@ export function countdownAppliesToAnyClass(
  * Returns negative numbers for past dates.
  */
 export function daysUntil(dateISO: string): number {
-  const now = new Date()
+  const now = serverNow()
   now.setHours(0, 0, 0, 0)
   const target = new Date(dateISO + 'T00:00:00')
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
