@@ -2,7 +2,8 @@
  * RT-SC · Year rollover — Transition élèves modal.
  *
  * Multi-step wizard for processing one source class at a time:
- *   1. Pick source class
+ *   1. Pick source class  (filtered to pending-only; auto-skipped when
+ *      re-entering after a class was just processed)
  *   2. Classify each élève: Admis / Échoué / Abandonné  (default Échoué — safer)
  *   3. Pick destination for each Admis  (default: next-level class)
  *   4. Dry-run summary
@@ -10,6 +11,10 @@
  *
  * Élèves already flagged `_transfere: true` are filtered out — they've
  * already been processed in the current rollover session.
+ *
+ * Auto-advance: after a class completes, the Done step offers a
+ * "Passer à [next class]" button that loads the next pending class
+ * and jumps straight to step 2, bypassing the class-picker.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -340,8 +345,17 @@ export function ModalTransitionEleves({
 
   function renderBody() {
     switch (step) {
-      case 'select-class':
-        return <StepSelectClass classes={classes} value={sourceClasseId} onChange={setSourceClasseId} />
+      case 'select-class': {
+        const transitionedSet = new Set(config?.classesTransitioned ?? [])
+        return (
+          <StepSelectClass
+            classes={classes}
+            transitionedIds={transitionedSet}
+            value={sourceClasseId}
+            onChange={setSourceClasseId}
+          />
+        )
+      }
       case 'classify':
         return (
           <StepClassify
@@ -385,15 +399,39 @@ export function ModalTransitionEleves({
         const allClassesDone =
           classes.length > 0 &&
           classes.every((c) => transitionedSet.has(c.id))
+        const next = allClassesDone ? null : nextPendingClass(sourceClasseId)
+        const remaining = classes.filter((c) => !transitionedSet.has(c.id) && c.id !== sourceClasseId).length
         return (
           <StepDone
             result={result}
             totalAttempted={totalAttempted}
             allClassesDone={allClassesDone}
+            nextClass={next}
+            remainingCount={remaining}
           />
         )
       }
     }
+  }
+
+  // Find the next class that hasn't been transitioned yet, excluding
+  // the one we just finished so we don't re-offer the same class.
+  function nextPendingClass(excludeId: string): Classe | null {
+    const transitionedSet = new Set(config?.classesTransitioned ?? [])
+    return (
+      classes.find((c) => !transitionedSet.has(c.id) && c.id !== excludeId) ??
+      null
+    )
+  }
+
+  function advanceToClass(classe: Classe) {
+    setSourceClasseId(classe.id)
+    setDecisions({})
+    setDestinations({})
+    setResult(null)
+    setTotalAttempted(0)
+    // Skip the class-picker and go straight to classify
+    setStep('classify')
   }
 
   function renderFooter() {
@@ -466,13 +504,11 @@ export function ModalTransitionEleves({
       case 'execute':
         return null
       case 'done': {
-        // Are we done with EVERY class? Check config.classesTransitioned
-        // against the active classes list. If yes, offer to chain into
-        // archive.
         const transitionedSet = new Set(config?.classesTransitioned ?? [])
         const allClassesDone =
           classes.length > 0 &&
           classes.every((c) => transitionedSet.has(c.id))
+        const next = allClassesDone ? null : nextPendingClass(sourceClasseId)
 
         return (
           <>
@@ -480,16 +516,21 @@ export function ModalTransitionEleves({
             {allClassesDone && onRequestArchive ? (
               <Button
                 variant="danger"
-                onClick={() => {
-                  onRequestArchive()
-                }}
+                onClick={onRequestArchive}
                 trailingIcon={<Archive className="h-3.5 w-3.5" />}
               >
                 Archiver l'année maintenant
               </Button>
+            ) : next ? (
+              <Button
+                onClick={() => advanceToClass(next)}
+                trailingIcon={<ArrowRight className="h-4 w-4" />}
+              >
+                Passer à {nomClasse(next)}
+              </Button>
             ) : (
+              // Fallback: next class exists but wasn't found — let admin pick manually
               <Button onClick={() => {
-                // Reset and go to step 1 for next class
                 setStep('select-class')
                 setSourceClasseId('')
                 setDecisions({})
@@ -564,31 +605,50 @@ function stepLabel(step: Step): string {
 
 function StepSelectClass({
   classes,
+  transitionedIds,
   value,
   onChange,
 }: {
   classes: Classe[]
+  transitionedIds: Set<string>
   value: string
   onChange: (v: string) => void
 }) {
+  const pending = classes.filter((c) => !transitionedIds.has(c.id))
+  const done = classes.length - pending.length
+
   return (
     <div className="space-y-4">
       <p className="text-[0.875rem] text-ink-600 leading-relaxed">
         Choisissez la classe dont vous souhaitez traiter les élèves.
-        Vous pourrez recommencer pour chaque classe avant l'archivage final.
+        Les classes déjà traitées n'apparaissent plus dans la liste.
       </p>
+
+      {done > 0 && (
+        <div className="flex items-center gap-2 rounded-md bg-success-bg border border-success/20 px-3 py-2 text-[0.82rem] text-success-dark font-medium">
+          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+          {done} classe{done > 1 ? 's' : ''} traitée{done > 1 ? 's' : ''} sur {classes.length}
+        </div>
+      )}
+
       <Select
         label="Classe source"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
         <option value="">— Choisir une classe —</option>
-        {classes.map((c) => (
+        {pending.map((c) => (
           <option key={c.id} value={c.id}>
             {nomClasse(c)}
           </option>
         ))}
       </Select>
+
+      {pending.length === 0 && (
+        <p className="text-[0.82rem] text-ink-500 italic text-center py-2">
+          Toutes les classes ont déjà été traitées.
+        </p>
+      )}
     </div>
   )
 }
@@ -985,10 +1045,14 @@ function StepDone({
   result,
   totalAttempted,
   allClassesDone,
+  nextClass,
+  remainingCount,
 }: {
   result: TransitionResult | null
   totalAttempted: number
   allClassesDone: boolean
+  nextClass: Classe | null
+  remainingCount: number
 }) {
   const ok = (result?.errors.length ?? 0) === 0
   return (
@@ -1006,6 +1070,7 @@ function StepDone({
         {(result?.successCount ?? 0) > 1 ? 's' : ''} traité
         {(result?.successCount ?? 0) > 1 ? 's' : ''} sur {totalAttempted}
       </p>
+
       {result && result.errors.length > 0 && (
         <div className="mt-4 rounded-md bg-danger-bg border border-danger/20 p-3 text-left">
           <p className="font-semibold text-danger text-[0.8125rem] mb-1.5 flex items-center gap-1">
@@ -1022,13 +1087,29 @@ function StepDone({
         </div>
       )}
 
+      {/* Next class callout — shown when there are still classes to process */}
+      {!allClassesDone && nextClass && (
+        <div className="mt-5 rounded-md bg-info-bg border border-navy/15 p-4 text-left">
+          <div className="flex items-start gap-2">
+            <ArrowRight className="h-4 w-4 text-navy shrink-0 mt-0.5" aria-hidden />
+            <div>
+              <p className="font-semibold text-navy text-[0.88rem]">
+                Prochaine classe : {nomClasse(nextClass)}
+              </p>
+              {remainingCount > 1 && (
+                <p className="text-[0.78rem] text-ink-600 mt-0.5">
+                  {remainingCount} classe{remainingCount > 1 ? 's' : ''} restante{remainingCount > 1 ? 's' : ''} après celle-ci
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {allClassesDone && (
         <div className="mt-5 rounded-md bg-warning-bg border border-warning/30 p-4 text-left">
           <div className="flex items-start gap-2">
-            <AlertTriangle
-              className="h-5 w-5 text-warning-dark shrink-0 mt-0.5"
-              aria-hidden
-            />
+            <AlertTriangle className="h-5 w-5 text-warning-dark shrink-0 mt-0.5" aria-hidden />
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-warning-dark text-[0.88rem] leading-tight">
                 Toutes les classes ont été traitées.
