@@ -21,6 +21,7 @@
  */
 
 import { useState } from 'react'
+import { serverNow } from '@/lib/serverTime'
 import { motion } from 'framer-motion'
 import {
   ShieldAlert,
@@ -80,7 +81,7 @@ export function DangerZoneCard() {
 
   // Archived-success recency check
   const lastArchivedMs = toMillis(config?.lastArchivedAt)
-  const now = Date.now()
+  const now = serverNow().getTime()
   const graceMs = ARCHIVED_SUCCESS_DAYS * 24 * 60 * 60 * 1000
   const withinGrace =
     lastArchivedMs !== null && now - lastArchivedMs < graceMs

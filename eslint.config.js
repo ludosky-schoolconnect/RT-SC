@@ -26,6 +26,22 @@ export default [
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'NewExpression[callee.name="Date"][arguments.length=0]',
+          message: 'Use serverNow() from @/lib/serverTime instead of new Date() — device clock is not authoritative.',
+        },
+        {
+          selector: 'CallExpression[callee.object.name="Date"][callee.property.name="now"]',
+          message: 'Use serverNow().getTime() from @/lib/serverTime instead of Date.now() — device clock is not authoritative.',
+        },
+      ],
     },
+  },
+  // serverTime.ts is the sole owner of Date.now() — it IS the clock module.
+  {
+    files: ['src/lib/serverTime.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
   },
 ]
