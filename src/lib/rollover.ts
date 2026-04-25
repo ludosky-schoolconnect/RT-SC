@@ -41,6 +41,7 @@ import {
   updateDoc,
 } from 'firebase/firestore'
 import { db, docRef } from '@/firebase'
+import { ecoleRolloverPlanDoc } from '@/lib/firestore-keys'
 import {
   absencesCol,
   annoncesCol,
@@ -90,7 +91,81 @@ export function bumpAnnee(annee: string): string {
   return `${end}-${end + 1}`
 }
 
-// ─── Operation A — per-élève transition ─────────────────────
+// ─── Stage-then-commit: client writes the plan, CF executes it ──
+
+export interface StagedDecision {
+  eleveId: string
+  statut: TransitionStatut
+  destClasseId?: string
+}
+
+export interface StageClassInput {
+  classeId: string
+  decisions: TransitionDecision[]
+  annee: string
+  newAnnee: string
+}
+
+/**
+ * Save promotion decisions for one class to ecole/rolloverPlan.
+ *
+ * Nothing moves. No student is touched. This is pure staging — the CF
+ * (executeRollover) reads the plan later and does the actual work.
+ * Safe to call multiple times: re-staging a class overwrites its entry.
+ */
+export async function stageClassDecisions({
+  classeId,
+  decisions,
+  annee,
+  newAnnee,
+}: StageClassInput): Promise<void> {
+  const planRef = docRef(ecoleRolloverPlanDoc())
+  const classEntry = {
+    decisions: decisions.map((d) => ({
+      eleveId: d.eleveId,
+      statut: d.statut,
+      ...(d.destClasseId ? { destClasseId: d.destClasseId } : {}),
+    })),
+    stagedAt: serverTimestamp(),
+  }
+
+  // updateDoc with dot-notation merges just this class's entry, leaving
+  // other classes' entries untouched. Falls back to setDoc on first call.
+  try {
+    await updateDoc(planRef, {
+      annee,
+      newAnnee,
+      status: 'staging',
+      [`classePlans.${classeId}`]: classEntry,
+    })
+  } catch {
+    // Doc doesn't exist yet (first class of this rollover) — create it.
+    await setDoc(planRef, {
+      annee,
+      newAnnee,
+      status: 'staging',
+      createdAt: serverTimestamp(),
+      classePlans: { [classeId]: classEntry },
+    })
+  }
+
+  // Update classesTransitioned in config so the UI progress bar works.
+  try {
+    const cfgSnap = await getDoc(docRef(ecoleConfigDoc()))
+    const cfg = (cfgSnap.data() ?? {}) as { classesTransitioned?: string[] }
+    const existing = new Set(cfg.classesTransitioned ?? [])
+    existing.add(classeId)
+    await setDoc(
+      docRef(ecoleConfigDoc()),
+      { transitionInProgress: true, classesTransitioned: Array.from(existing) },
+      { merge: true }
+    )
+  } catch (e) {
+    console.warn('[stageClassDecisions] could not update classesTransitioned:', (e as Error).message)
+  }
+}
+
+// ─── Operation A — per-élève transition (legacy client-side) ─
 
 export type TransitionStatut = 'admis' | 'echoue' | 'abandonne'
 

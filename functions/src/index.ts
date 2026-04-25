@@ -67,6 +67,9 @@ export { regenerateOwnPasskey } from './http/regenerateOwnPasskey.js'
 // ── Session E3
 export { regeneratePasskeyForProf } from './http/regeneratePasskeyForProf.js'
 
+// ── Session E6 — Stage-then-commit rollover (active once Blaze enabled)
+export { executeRollover } from './http/executeRollover.js'
+
 // ── Session E5 — SaaSMaster custom claim
 // setSaaSMasterClaim promotes a caller with ludoskyazon@gmail.com
 // (and email_verified) to SaaSMaster via Firebase Auth custom claim.

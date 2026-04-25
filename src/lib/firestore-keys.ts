@@ -31,6 +31,8 @@ export const ecoleFinancesDoc = () => 'ecole/finances'
 export const ecoleSecuriteDoc = () => 'ecole/securite'
 export const ecoleSubscriptionDoc = () => 'ecole/subscription'
 export const ecoleExamensDoc = () => 'ecole/examens'
+/** Rollover plan: staging area for promotion decisions before CF execution. */
+export const ecoleRolloverPlanDoc = () => 'ecole/rolloverPlan'
 
 // ─────────────────────────────────────────────────────────────
 // Professeurs

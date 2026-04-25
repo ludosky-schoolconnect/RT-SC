@@ -16,6 +16,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { onSnapshot } from 'firebase/firestore'
+import { httpsCallable } from 'firebase/functions'
 import {
   Archive,
   AlertTriangle,
@@ -37,12 +39,16 @@ import { Input } from '@/components/ui/Input'
 import { useEcoleConfig } from '@/hooks/useEcoleConfig'
 import { useToast } from '@/stores/toast'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  bumpAnnee,
-  executeFinalArchive,
-  type ArchiveYearResult,
-} from '@/lib/rollover'
+import { bumpAnnee } from '@/lib/rollover'
+import { functions, docRef } from '@/firebase'
+import { ecoleRolloverPlanDoc } from '@/lib/firestore-keys'
 import { cn } from '@/lib/cn'
+
+interface RolloverResult {
+  classesProcessed: number
+  elevesArchived: number
+  errors: string[]
+}
 
 interface ModalArchiveAnneeProps {
   open: boolean
@@ -59,13 +65,8 @@ export function ModalArchiveAnnee({ open, onClose }: ModalArchiveAnneeProps) {
   const [step, setStep] = useState<Step>('preflight')
   const [confirmText, setConfirmText] = useState('')
   const [progress, setProgress] = useState({ stepName: '', done: 0, total: 0 })
-  const [result, setResult] = useState<ArchiveYearResult | null>(null)
+  const [result, setResult] = useState<RolloverResult | null>(null)
   const [fatalError, setFatalError] = useState<string | null>(null)
-  // Snapshot of newAnnee captured at execute time. Without this, the
-  // Done step's "Nouvelle année active" drifts because config.anneeActive
-  // updates mid-flow (step 4 writes it) and the onSnapshot re-fires,
-  // pushing newAnnee forward by one more year. Same class of display
-  // bug as the Transition modal's "N sur X" mismatch.
   const [newAnneeSnapshot, setNewAnneeSnapshot] = useState('')
 
   const annee = config?.anneeActive ?? ''
@@ -96,22 +97,46 @@ export function ModalArchiveAnnee({ open, onClose }: ModalArchiveAnneeProps) {
     if (!canExecute) return
     setStep('execute')
     setNewAnneeSnapshot(newAnnee)
-    try {
-      const res = await executeFinalArchive({
-        annee,
-        newAnnee,
-        onProgress: (stepName, done, total) =>
-          setProgress({ stepName, done, total }),
-      })
-      setResult(res)
-      setStep('done')
 
-      // Refresh everything that might be stale
-      qc.invalidateQueries({ queryKey: ['classes'] })
-      qc.invalidateQueries({ queryKey: ['ecole', 'config'] })
-      qc.invalidateQueries({ queryKey: ['school-stats'] })
+    // Listen to rolloverPlan.progress for live CF progress updates.
+    const unsub = onSnapshot(
+      docRef(ecoleRolloverPlanDoc()),
+      (snap) => {
+        if (!snap.exists()) return
+        const data = snap.data() as {
+          progress?: { step: string; done: number; total: number }
+          status?: string
+          result?: RolloverResult
+          error?: string
+        }
+        if (data.progress) {
+          setProgress({ stepName: data.progress.step, done: data.progress.done, total: data.progress.total })
+        }
+        if (data.status === 'done') {
+          setResult(data.result ?? { classesProcessed: 0, elevesArchived: 0, errors: [] })
+          setStep('done')
+          unsub()
+          qc.invalidateQueries({ queryKey: ['classes'] })
+          qc.invalidateQueries({ queryKey: ['ecole', 'config'] })
+          qc.invalidateQueries({ queryKey: ['school-stats'] })
+        }
+        if (data.status === 'failed') {
+          setFatalError(data.error ?? 'Erreur inconnue')
+          setStep('done')
+          unsub()
+          toast.error("Échec de l'archivage. Voir les détails.")
+        }
+      },
+      (err) => console.warn('[ModalArchiveAnnee] plan snapshot error:', err)
+    )
+
+    // Call the CF — it runs server-side, this resolves quickly.
+    try {
+      const fn = httpsCallable(functions, 'executeRollover')
+      await fn()
     } catch (err) {
-      console.error('[ArchiveYear] fatal:', err)
+      unsub()
+      console.error('[ArchiveYear] CF call failed:', err)
       const msg = err instanceof Error ? err.message : String(err)
       setFatalError(msg)
       setStep('done')
@@ -336,7 +361,7 @@ function DoneStep({
   fatalError,
   newAnnee,
 }: {
-  result: ArchiveYearResult | null
+  result: RolloverResult | null
   fatalError: string | null
   newAnnee: string
 }) {

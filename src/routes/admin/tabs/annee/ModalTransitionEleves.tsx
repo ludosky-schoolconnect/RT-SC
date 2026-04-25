@@ -51,9 +51,9 @@ import { useToast } from '@/stores/toast'
 import { useConfirm } from '@/stores/confirm'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  executeTransition,
+  stageClassDecisions,
+  bumpAnnee,
   type TransitionDecision,
-  type TransitionResult,
   type TransitionStatut,
 } from '@/lib/rollover'
 import { nomClasse, NEXT_NIVEAU } from '@/lib/benin'
@@ -88,12 +88,7 @@ export function ModalTransitionEleves({
   const [sourceClasseId, setSourceClasseId] = useState<string>('')
   const [decisions, setDecisions] = useState<Record<string, TransitionStatut>>({})
   const [destinations, setDestinations] = useState<Record<string, string>>({})
-  const [progress, setProgress] = useState({ done: 0, total: 0 })
-  const [result, setResult] = useState<TransitionResult | null>(null)
-  // Snapshot of total attempted — captured at execute time so the Done
-  // step's "X sur Y" stays accurate even after onSnapshot shrinks
-  // pendingEleves (admis élèves vanish from source once moved).
-  const [totalAttempted, setTotalAttempted] = useState(0)
+  const [stagingError, setStagingError] = useState<string | null>(null)
 
   const { data: eleves = [], isLoading: elevesLoading } = useEleves(
     sourceClasseId || undefined
@@ -104,11 +99,9 @@ export function ModalTransitionEleves({
     [classes, sourceClasseId]
   )
 
-  // Filter out already-transferred élèves
-  const pendingEleves = useMemo(
-    () => eleves.filter((e) => !e._transfere),
-    [eleves]
-  )
+  // All students in the source class are eligible — none have moved yet
+  // (staging is non-destructive; the CF does the actual moves later).
+  const pendingEleves = eleves
 
   // Reset state when the modal opens
   useEffect(() => {
@@ -117,9 +110,7 @@ export function ModalTransitionEleves({
       setSourceClasseId('')
       setDecisions({})
       setDestinations({})
-      setProgress({ done: 0, total: 0 })
-      setResult(null)
-      setTotalAttempted(0)
+      setStagingError(null)
     }
   }, [open])
 
@@ -235,17 +226,23 @@ export function ModalTransitionEleves({
     return admisIds.every((id) => destinations[id] && destinations[id] !== sourceClasseId)
   }, [decisions, destinations, sourceClasseId])
 
-  async function execute() {
+  async function stage() {
     if (!sourceClasseId || !config?.anneeActive) return
     setStep('execute')
-    setProgress({ done: 0, total: counts.total })
-    setTotalAttempted(counts.total)
+    setStagingError(null)
 
-    // Terminale "admis" (= diplômés) have no destination class — they
-    // leave the school. Route them to 'abandonne' so the rollover
-    // archives their record and removes them from the active roster.
-    // This preserves their data in the year archive for transcript
-    // issuance later.
+    const annee = config.anneeActive
+    let newAnnee: string
+    try {
+      newAnnee = bumpAnnee(annee)
+    } catch (e) {
+      toast.error("Format d'année invalide.")
+      setStep('review')
+      return
+    }
+
+    // Terminale "admis" = diplômés leaving school — route to 'abandonne'
+    // so the CF archives them rather than trying to move them to a next class.
     const isTerminaleSource = sourceClasse?.niveau === 'Terminale'
 
     const decisionsList: TransitionDecision[] = pendingEleves.map((e) => {
@@ -260,41 +257,21 @@ export function ModalTransitionEleves({
     })
 
     try {
-      const res = await executeTransition({
-        sourceClasseId,
+      await stageClassDecisions({
+        classeId: sourceClasseId,
         decisions: decisionsList,
-        annee: config.anneeActive,
-        onProgress: (done, total) => setProgress({ done, total }),
+        annee,
+        newAnnee,
       })
-      setResult(res)
       setStep('done')
-
-      // Refresh affected class queries
-      qc.invalidateQueries({ queryKey: ['eleves', sourceClasseId] })
-      qc.invalidateQueries({ queryKey: ['classe', sourceClasseId, 'eleve-count'] })
-      const destIds = new Set(Object.values(destinations).filter(Boolean))
-      for (const dId of destIds) {
-        qc.invalidateQueries({ queryKey: ['eleves', dId] })
-        qc.invalidateQueries({ queryKey: ['classe', dId, 'eleve-count'] })
-      }
-      qc.invalidateQueries({ queryKey: ['school-stats'] })
-      // Refresh ecole/config so the "transition in progress" banner
-      // flips on as soon as the first class is processed.
+      // Refresh config so classesTransitioned updates immediately in the UI.
       qc.invalidateQueries({ queryKey: ['ecole', 'config'] })
     } catch (err) {
-      console.error('[Transition] fatal:', err)
-      toast.error("Échec de la transition. Voir la console pour les détails.")
+      console.error('[Stage] fatal:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      setStagingError(msg)
+      toast.error("Échec de l'enregistrement des décisions.")
       setStep('done')
-      setResult({
-        successCount: 0,
-        errors: [
-          {
-            eleveId: '—',
-            statut: 'echoue',
-            error: err instanceof Error ? err.message : String(err),
-          },
-        ],
-      })
     }
   }
 
@@ -393,7 +370,7 @@ export function ModalTransitionEleves({
           />
         )
       case 'execute':
-        return <StepExecute progress={progress} />
+        return <StepStaging />
       case 'done': {
         const transitionedSet = new Set(config?.classesTransitioned ?? [])
         const allClassesDone =
@@ -403,8 +380,9 @@ export function ModalTransitionEleves({
         const remaining = classes.filter((c) => !transitionedSet.has(c.id) && c.id !== sourceClasseId).length
         return (
           <StepDone
-            result={result}
-            totalAttempted={totalAttempted}
+            sourceClasse={sourceClasse}
+            counts={counts}
+            stagingError={stagingError}
             allClassesDone={allClassesDone}
             nextClass={next}
             remainingCount={remaining}
@@ -428,9 +406,7 @@ export function ModalTransitionEleves({
     setSourceClasseId(classe.id)
     setDecisions({})
     setDestinations({})
-    setResult(null)
-    setTotalAttempted(0)
-    // Skip the class-picker and go straight to classify
+    setStagingError(null)
     setStep('classify')
   }
 
@@ -496,8 +472,8 @@ export function ModalTransitionEleves({
             >
               Retour
             </Button>
-            <Button variant="danger" onClick={execute}>
-              Lancer la transition
+            <Button variant="danger" onClick={stage}>
+              Confirmer les décisions
             </Button>
           </>
         )
@@ -535,7 +511,7 @@ export function ModalTransitionEleves({
                 setSourceClasseId('')
                 setDecisions({})
                 setDestinations({})
-                setResult(null)
+                setStagingError(null)
               }}>
                 Traiter une autre classe
               </Button>
@@ -1009,32 +985,15 @@ function ReviewRow({ icon, label, detail }: { icon: React.ReactNode; label: stri
   )
 }
 
-// ─── Step 5: Execute ────────────────────────────────────────
+// ─── Step 5: Staging (instant write — no progress bar needed) ──
 
-function StepExecute({ progress }: { progress: { done: number; total: number } }) {
-  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
+function StepStaging() {
   return (
     <div className="py-8 text-center">
       <Loader2 className="h-12 w-12 text-navy mx-auto mb-3 animate-spin" aria-hidden />
       <p className="font-display text-lg font-semibold text-navy">
-        Transition en cours…
+        Enregistrement des décisions…
       </p>
-      <p className="text-sm text-ink-600 mt-1 mb-5">
-        Ne fermez pas l'application.
-      </p>
-      <div className="max-w-sm mx-auto">
-        <div className="h-2 bg-ink-100 rounded-full overflow-hidden">
-          <motion.div
-            className="h-full bg-navy"
-            initial={{ width: 0 }}
-            animate={{ width: `${pct}%` }}
-            transition={{ duration: 0.3 }}
-          />
-        </div>
-        <p className="mt-2 text-[0.78rem] text-ink-400 tabular-nums">
-          {progress.done} / {progress.total} ({pct}%)
-        </p>
-      </div>
     </div>
   )
 }
@@ -1042,19 +1001,21 @@ function StepExecute({ progress }: { progress: { done: number; total: number } }
 // ─── Step 6: Done ───────────────────────────────────────────
 
 function StepDone({
-  result,
-  totalAttempted,
+  sourceClasse,
+  counts,
+  stagingError,
   allClassesDone,
   nextClass,
   remainingCount,
 }: {
-  result: TransitionResult | null
-  totalAttempted: number
+  sourceClasse: Classe | null
+  counts: { admis: number; echoue: number; abandonne: number; total: number }
+  stagingError: string | null
   allClassesDone: boolean
   nextClass: Classe | null
   remainingCount: number
 }) {
-  const ok = (result?.errors.length ?? 0) === 0
+  const ok = !stagingError
   return (
     <div className="py-4 text-center">
       {ok ? (
@@ -1063,28 +1024,26 @@ function StepDone({
         <XCircle className="h-14 w-14 text-danger mx-auto mb-3" aria-hidden />
       )}
       <p className="font-display text-xl font-semibold text-navy">
-        {ok ? 'Transition terminée' : 'Transition partiellement échouée'}
+        {ok
+          ? `Décisions enregistrées${sourceClasse ? ` — ${nomClasse(sourceClasse)}` : ''}`
+          : 'Échec de l\'enregistrement'}
       </p>
-      <p className="text-[0.875rem] text-ink-600 mt-2">
-        <strong className="text-success">{result?.successCount ?? 0}</strong> élève
-        {(result?.successCount ?? 0) > 1 ? 's' : ''} traité
-        {(result?.successCount ?? 0) > 1 ? 's' : ''} sur {totalAttempted}
-      </p>
+      {ok ? (
+        <p className="text-[0.875rem] text-ink-600 mt-2">
+          <strong className="text-success">{counts.admis}</strong> admis ·{' '}
+          <strong className="text-warning">{counts.echoue}</strong> échoués ·{' '}
+          <strong className="text-danger">{counts.abandonne}</strong> abandonnés
+        </p>
+      ) : (
+        <pre className="mt-3 rounded-md bg-danger-bg border border-danger/20 p-3 text-left text-[0.78rem] text-danger/90 font-mono whitespace-pre-wrap break-words">
+          {stagingError}
+        </pre>
+      )}
 
-      {result && result.errors.length > 0 && (
-        <div className="mt-4 rounded-md bg-danger-bg border border-danger/20 p-3 text-left">
-          <p className="font-semibold text-danger text-[0.8125rem] mb-1.5 flex items-center gap-1">
-            <XCircle className="h-4 w-4" aria-hidden />
-            {result.errors.length} erreur{result.errors.length > 1 ? 's' : ''}
-          </p>
-          <ul className="space-y-0.5 max-h-32 overflow-y-auto text-[0.78rem] text-danger/90">
-            {result.errors.map((e, i) => (
-              <li key={i} className="font-mono">
-                • {e.error}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {ok && (
+        <p className="text-[0.78rem] text-ink-500 mt-3 italic">
+          Aucun élève n'a été déplacé. L'archivage réel s'effectuera lors de l'étape finale.
+        </p>
       )}
 
       {/* Next class callout — shown when there are still classes to process */}
